@@ -119,7 +119,7 @@ jobs:
       - name: Build APK with Gradle
         run: |
           cd my-app
-          gradle wrapper
+          gradle wrapper --gradle-version 8.4
           ./gradlew assembleDebug
 
       - name: Upload APK Artifact
