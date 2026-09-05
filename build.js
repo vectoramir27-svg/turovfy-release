@@ -1,4 +1,4 @@
-const { generateApp } = require('@pwabuilder/pwabuilder-android');
+const { generateApp } = require('@pwabuilder/android');
 const path = require('path');
 const fs = require('fs');
 
