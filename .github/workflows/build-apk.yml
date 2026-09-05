@@ -30,7 +30,7 @@ jobs:
       - name: Install Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
 
-      - name: Configure and Build TWA APK
+      - name: Build TWA APK
         run: |
           mkdir -p ~/.bubblewrap
           cat <<EOF > ~/.bubblewrap/config.json
@@ -42,15 +42,56 @@ jobs:
 
           mkdir build-twa && cd build-twa
 
-          # Инициализация манифеста без интерактивных вопросов
-          bubblewrap init --manifest="https://turovfy-app.onrender.com/manifest.json" --skipQuestions
-
-          # Генерация ключа подписи
+          # Генерируем ключ подписи без парольных подсказок
           keytool -genkeypair -v -keystore android.keystore -alias turovfy -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass "turovfy123" -keypass "turovfy123" \
             -dname "CN=TurovFy, OU=Mobile, O=Turov, L=Moscow, S=Moscow, C=RU"
 
-          # Сборка готового релизного APK
+          # Формируем готовый конфиг проекта TWA напрямую с твоим логотипом
+          cat <<EOF > twa-manifest.json
+          {
+            "packageId": "com.turovfy.app",
+            "host": "turovfy-app.onrender.com",
+            "name": "TurovFy",
+            "launcherName": "TurovFy",
+            "themeColor": "#050507",
+            "navigationColor": "#050507",
+            "backgroundColor": "#050507",
+            "startUrl": "/",
+            "iconUrl": "https://turovfy-app.onrender.com/assets/logo.png",
+            "maskableIconUrl": "https://turovfy-app.onrender.com/assets/logo.png",
+            "appVersionName": "1.0.0",
+            "appVersionCode": 1,
+            "shortcuts": [],
+            "signingKey": {
+              "path": "./android.keystore",
+              "alias": "turovfy"
+            },
+            "enableNotifications": false,
+            "features": {
+              "locationDelegation": {
+                "enabled": false
+              },
+              "playBilling": {
+                "enabled": false
+              }
+            },
+            "alphaDependencies": {
+              "enabled": false
+            },
+            "enableSiteSettingsShortcut": "NONE",
+            "isChromeOSOnly": false,
+            "isMetaQuest": false,
+            "fullScopeUrl": "https://turovfy-app.onrender.com/",
+            "shareTarget": {
+              "enabled": false
+            }
+          }
+          EOF
+
+          # Сборка проекта без интерактивных запросов
+          export BUBBLEWRAP_KEYSTORE_PASSWORD="turovfy123"
+          export BUBBLEWRAP_KEY_PASSWORD="turovfy123"
           bubblewrap build --skipPwaValidation
 
       - name: Upload APK Artifact
