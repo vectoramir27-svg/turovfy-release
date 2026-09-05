@@ -40,29 +40,29 @@ jobs:
           }
           EOF
 
-          # Будим спящий Render и ждем ответа 200 OK
-          echo "Ожидание пробуждения Render..."
-          until [ \$(curl -s -o /dev/null -w "%{http_code}" https://turovfy-app.onrender.com/manifest.json) -eq 200 ]; do
-            echo "Render еще спит, ждем 5 секунд..."
-            sleep 5
+          echo "Проверка доступности Render..."
+          code="000"
+          while [ "$code" != "200" ]; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" https://turovfy-app.onrender.com/manifest.json)
+            echo "HTTP статус: $code"
+            if [ "$code" != "200" ]; then
+              echo "Render просыпается, ждем 5 секунд..."
+              sleep 5
+            fi
           done
-          echo "Render активен и отдает manifest.json!"
+          echo "Render активен!"
 
           mkdir build-twa && cd build-twa
 
-          # Генерируем ключ для подписи
           keytool -genkeypair -v -keystore android.keystore -alias turovfy -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass "turovfy123" -keypass "turovfy123" \
             -dname "CN=TurovFy, OU=Mobile, O=Turov, L=Moscow, S=Moscow, C=RU"
 
-          # Инициализируем проект с живого сайта
           bubblewrap init --manifest="https://turovfy-app.onrender.com/manifest.json" --skipQuestions
 
-          # Пароли подписи для Bubblewrap
           export BUBBLEWRAP_KEYSTORE_PASSWORD="turovfy123"
           export BUBBLEWRAP_KEY_PASSWORD="turovfy123"
 
-          # Сборка готового APK
           bubblewrap build --skipPwaValidation
 
       - name: Upload APK Artifact
