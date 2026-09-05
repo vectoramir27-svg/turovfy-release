@@ -13,11 +13,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
       - name: Setup Java
         uses: actions/setup-java@v3
         with:
@@ -27,51 +22,135 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Bubblewrap CLI
-        run: npm install -g @bubblewrap/cli
-
-      - name: Build TWA APK
+      - name: Build Standalone TWA APK
         run: |
-          mkdir -p ~/.bubblewrap
-          cat <<EOF > ~/.bubblewrap/config.json
-          {
-            "jdkPath": "${JAVA_HOME}",
-            "androidSdkPath": "${ANDROID_HOME}"
+          mkdir -p twa-project/app/src/main/res/values
+          mkdir -p twa-project/app/src/main/res/drawable
+          mkdir -p twa-project/gradle/wrapper
+
+          # Скачиваем официальную иконку приложения
+          curl -s -L -o twa-project/app/src/main/res/drawable/ic_launcher.png https://turovfy-app.onrender.com/assets/logo.png || true
+          if [ ! -s twa-project/app/src/main/res/drawable/ic_launcher.png ]; then
+            convert -size 512x512 xc:#121216 twa-project/app/src/main/res/drawable/ic_launcher.png 2>/dev/null || true
+          fi
+
+          # Конфигурация корневого Gradle
+          cat <<'EOF' > twa-project/settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "TurovFy"
+          include ':app'
+          EOF
+
+          cat <<'EOF' > twa-project/build.gradle
+          plugins {
+              id 'com.android.application' version '8.2.0' apply false
           }
           EOF
 
-          # Ожидание готовности manifest.json на Render
-          echo "Проверка готовности манифеста на сайте..."
-          code="000"
-          while [ "$code" != "200" ]; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" https://turovfy-app.onrender.com/manifest.json)
-            echo "HTTP статус: $code"
-            if [ "$code" != "200" ]; then
-              echo "Ждем деплой на Render (5 сек)..."
-              sleep 5
-            fi
-          done
-          echo "Манифест найден и готов!"
+          # Конфигурация сборки модуля приложения TWA
+          cat <<'EOF' > twa-project/app/build.gradle
+          plugins {
+              id 'com.android.application'
+          }
 
-          mkdir build-twa && cd build-twa
+          android {
+              namespace 'com.turovfy.app'
+              compileSdk 34
 
-          # Генерация ключа подписи
-          keytool -genkeypair -v -keystore android.keystore -alias turovfy -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass "turovfy123" -keypass "turovfy123" \
-            -dname "CN=TurovFy, OU=Mobile, O=Turov, L=Moscow, S=Moscow, C=RU"
+              defaultConfig {
+                  applicationId "com.turovfy.app"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0.0"
 
-          # Инициализация приложения
-          bubblewrap init --manifest="https://turovfy-app.onrender.com/manifest.json" --skipQuestions
+                  manifestPlaceholders = [
+                      hostName: "turovfy-app.onrender.com",
+                      defaultUrl: "https://turovfy-app.onrender.com",
+                      launcherName: "TurovFy",
+                      assetStatements: "[]"
+                  ]
+              }
 
-          # Пароли подписи
-          export BUBBLEWRAP_KEYSTORE_PASSWORD="turovfy123"
-          export BUBBLEWRAP_KEY_PASSWORD="turovfy123"
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      signingConfig signingConfigs.debug
+                  }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
 
-          # Сборка готового APK
-          bubblewrap build --skipPwaValidation
+          dependencies {
+              implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+          }
+          EOF
+
+          # AndroidManifest с запуском Trusted Web Activity
+          cat <<'EOF' > twa-project/app/src/main/AndroidManifest.xml
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:allowBackup="true"
+                  android:icon="@drawable/ic_launcher"
+                  android:label="${launcherName}"
+                  android:supportsRtl="true"
+                  android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+
+                  <meta-data
+                      android:name="asset_statements"
+                      android:value="${assetStatements}" />
+
+                  <activity
+                      android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
+                      android:exported="true"
+                      android:label="${launcherName}">
+
+                      <meta-data
+                          android:name="android.support.customtabs.trusted.DEFAULT_URL"
+                          android:value="${defaultUrl}" />
+
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+
+                      <intent-filter android:autoVerify="true">
+                          <action android:name="android.intent.action.VIEW" />
+                          <category android:name="android.intent.category.DEFAULT" />
+                          <category android:name="android.intent.category.BROWSABLE" />
+                          <data
+                              android:scheme="https"
+                              android:host="${hostName}" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          # Скачивание Gradle wrapper и запуск сборки
+          cd twa-project
+          gradle wrapper --gradle-version 8.2
+          chmod +x gradlew
+          ./gradlew assembleRelease
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: TurovFy-Release-APK
-          path: build-twa/*.apk
+          path: twa-project/app/build/outputs/apk/release/*.apk
