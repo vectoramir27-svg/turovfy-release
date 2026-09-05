@@ -16,8 +16,16 @@ jobs:
         with:
           node-version: 18
 
+      - name: Install PWABuilder CLI
+        run: npm install -g @pwabuilder/cli
+
       - name: Run Build Script
         run: node build.js
+
+      - name: Archive Android Output
+        run: |
+          cd android-output
+          zip -r ../android-app.zip .
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
