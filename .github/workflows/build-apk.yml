@@ -16,9 +16,6 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install Builder Dependencies
-        run: npm install @pwabuilder/android
-
       - name: Run Build Script
         run: node build.js
 
