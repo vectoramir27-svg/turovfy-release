@@ -7,7 +7,7 @@
   "backgroundColor": "#050507",
   "host": "turovfy-app.onrender.com",
   "launchUrl": "https://turovfy-app.onrender.com/",
-  "packageId": "com.onrender.turovfy_app.twa",
+  "packageId": "com.turovfy.app.twa",
   "launcherName": "TurovFy",
   "iconUrl": "https://turovfy-app.onrender.com/assets/logo.png",
   "splashScreenFadeOutDuration": 300,
