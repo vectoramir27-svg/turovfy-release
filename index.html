@@ -2081,8 +2081,8 @@
     <span id="toastMsg">Уведомление</span>
   </div>
 
-  <!-- СКРЫТЫЙ ОФИЦИАЛЬНЫЙ ДВИЖОК ВОСПРОИЗВЕДЕНИЯ YOUTUBE -->
-  <div style="position: fixed; top: -9999px; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none;">
+  <!-- СКРЫТЫЙ ПЛЕЕР БЕЗ КРИТИЧЕСКИХ ОШИБОК ОРИГИНАЛЬНОГО API -->
+  <div style="position: fixed; bottom: 0; left: 0; width: 64px; height: 64px; opacity: 0.001; z-index: -999; pointer-events: none; overflow: hidden;">
     <div id="yt-player-instance"></div>
   </div>
 
@@ -2162,23 +2162,29 @@
     let yt = null;
     let isYtReady = false;
     let progressTimer = null;
+    let queuedTrack = null;
 
     window.onYouTubeIframeAPIReady = function() {
       yt = new YT.Player('yt-player-instance', {
-        height: '1',
-        width: '1',
+        height: '64',
+        width: '64',
         playerVars: {
           'playsinline': 1,
           'controls': 0,
-          'disablekb': 1,
           'fs': 0,
-          'rel': 0,
-          'origin': window.location.origin
+          'rel': 0
         },
         events: {
           'onReady': () => {
             isYtReady = true;
-            yt.setVolume(Math.round(currentVolumeLevel * 100));
+            try {
+              yt.setVolume(Math.round(currentVolumeLevel * 100));
+            } catch (err) {}
+            if (queuedTrack) {
+              yt.loadVideoById(queuedTrack.id);
+              queuedTrack = null;
+              startProgressTimer();
+            }
           },
           'onStateChange': (e) => {
             if (e.data === YT.PlayerState.PLAYING) {
@@ -2999,14 +3005,24 @@
       if (kCurrentTime) kCurrentTime.innerText = '0:00';
       if (mKCurrentTime) mKCurrentTime.innerText = '0:00';
 
-      if (isYtReady && yt) {
+      if (isYtReady && yt && typeof yt.loadVideoById === 'function') {
+        try {
+          yt.unMute();
+          yt.setVolume(Math.round(currentVolumeLevel * 100));
+        } catch (e) {}
+
         yt.loadVideoById(track.id);
         yt.playVideo();
         startProgressTimer();
       } else {
-        const checkReady = setInterval(() => {
-          if (isYtReady && yt) {
-            clearInterval(checkReady);
+        queuedTrack = track;
+        const poll = setInterval(() => {
+          if (isYtReady && yt && typeof yt.loadVideoById === 'function') {
+            clearInterval(poll);
+            try {
+              yt.unMute();
+              yt.setVolume(Math.round(currentVolumeLevel * 100));
+            } catch (e) {}
             yt.loadVideoById(track.id);
             yt.playVideo();
             startProgressTimer();
