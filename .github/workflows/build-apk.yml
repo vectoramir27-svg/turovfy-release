@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install PWABuilder CLI
+      - name: Install PWABuilder CLI globally
         run: npm install -g @pwabuilder/cli
 
       - name: Run Build Script
