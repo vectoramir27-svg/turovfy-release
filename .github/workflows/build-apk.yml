@@ -75,8 +75,14 @@ jobs:
           EOF
 
           cat << 'EOF' > my-app/build.gradle
-          plugins {
-              id 'com.android.application' version '8.1.1' apply false
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:8.1.1'
+              }
           }
           allprojects {
               repositories {
@@ -89,9 +95,7 @@ jobs:
           echo "include ':app'" > my-app/settings.gradle
 
           cat << 'EOF' > my-app/app/build.gradle
-          plugins {
-              id 'com.android.application'
-          }
+          apply plugin: 'com.android.application'
           android {
               namespace 'com.turovfy.app'
               compileSdk 33
