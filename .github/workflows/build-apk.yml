@@ -11,14 +11,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-
       - name: Set up Java 17
         uses: actions/setup-java@v4
-        id: java
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -26,22 +20,115 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Bubblewrap
-        run: npm install -g @bubblewrap/cli
-
-      - name: Build APK Non-Interactively
-        env:
-          JAVA_PATH: ${{ steps.java.outputs.path }}
-          ANDROID_PATH: ${{ env.ANDROID_HOME }}
+      - name: Generate Native Android Project
         run: |
-          mkdir -p ~/.bubblewrap
-          echo "{\"jdkPath\":\"$JAVA_PATH\",\"androidSdkPath\":\"$ANDROID_PATH\"}" > ~/.bubblewrap/config.json
-          
-          # Запускаем сборку по готовому twa-manifest.json без интерактивных запросов
-          bubblewrap build --manifest twa-manifest.json --skip-icon-validation
+          mkdir -p my-app/app/src/main/java/com/turovfy/app
+          mkdir -p my-app/app/src/main/res/values
+          mkdir -p my-app/app/src/main/res/mipmap-hdpi
 
-      - name: Upload APK
+          # AndroidManifest.xml
+          cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.turovfy.app">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="true"
+                  android:label="TurovFy"
+                  android:usesCleartextTraffic="true"
+                  android:theme="@style/Theme.AppCompat.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          # MainActivity.java (WebView)
+          cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
+          package com.turovfy.app;
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          public class MainActivity extends Activity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  WebView webView = new WebView(this);
+                  webView.getSettings().setJavaScriptEnabled(true);
+                  webView.getSettings().setDomStorageEnabled(true);
+                  webView.setWebViewClient(new WebViewClient());
+                  webView.loadUrl("https://turovfy-app.onrender.com/");
+                  setContentView(webView);
+              }
+          }
+          EOF
+
+          # strings.xml
+          cat << 'EOF' > my-app/app/src/main/res/values/strings.xml
+          <resources>
+              <string name="app_name">TurovFy</string>
+          </resources>
+          EOF
+
+          # build.gradle (project)
+          cat << 'EOF' > my-app/build.gradle
+          buildscript {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+              dependencies {
+                  classpath 'com.android.tools.build:gradle:7.4.2'
+              }
+          }
+          allprojects {
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          EOF
+
+          # settings.gradle
+          echo "include ':app'" > my-app/settings.gradle
+
+          # build.gradle (app)
+          cat << 'EOF' > my-app/app/build.gradle
+          apply plugin: 'com.android.application'
+          android {
+              compileSdk 33
+              defaultConfig {
+                  applicationId "com.turovfy.app"
+                  minSdk 21
+                  targetSdk 33
+                  versionCode 1
+                  versionName "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+          }
+          EOF
+
+      - name: Build APK with Gradle
+        run: |
+          cd my-app
+          gradle wrapper
+          ./gradlew assembleDebug
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: TurovFy-Android-App
-          path: '*.apk'
+          path: my-app/app/build/outputs/apk/debug/app-debug.apk
