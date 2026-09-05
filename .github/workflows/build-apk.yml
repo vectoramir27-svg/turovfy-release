@@ -28,11 +28,8 @@ jobs:
       - name: Install Bubblewrap CLI
         run: npm i -g @bubblewrap/cli
 
-      - name: Initialize and Build TWA APK
-        run: |
-          # Флаг --batch полностью отключает интерактивный режим и строит проект автоматически
-          bubblewrap init --manifest https://turovfy-app.onrender.com/manifest.json --batch
-          bubblewrap build --batch
+      - name: Build TWA APK
+        run: bubblewrap build --batch
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
