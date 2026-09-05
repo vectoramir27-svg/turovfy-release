@@ -1,0 +1,52 @@
+name: Build Android APK (TWA)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli
+
+      - name: Initialize and Build TWA APK
+        run: |
+          mkdir build-twa && cd build-twa
+          
+          # Инициализация приложения через манифест твоего работающего сервера
+          bubblewrap init --manifest="https://turovfy-app.onrender.com/manifest.json"
+          
+          # Автоматическая генерация ключа подписи приложения
+          keytool -genkeypair -v -keystore android.keystore -alias turovfy -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "turovfy123" -keypass "turovfy123" \
+            -dname "CN=TurovFy, OU=Mobile, O=Turov, L=Moscow, S=Moscow, C=RU"
+            
+          # Сборка готового APK
+          bubblewrap build --skipPwaValidation
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TurovFy-Release-APK
+          path: build-twa/*.apk
