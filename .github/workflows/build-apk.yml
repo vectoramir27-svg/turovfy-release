@@ -18,6 +18,7 @@ jobs:
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
+        id: java
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -29,15 +30,20 @@ jobs:
         run: npm install -g @bubblewrap/cli
 
       - name: Bypass Interactive Prompts
+        env:
+          JAVA_PATH: ${{ steps.java.outputs.path }}
+          ANDROID_PATH: ${{ env.ANDROID_HOME }}
         run: |
-          # Принудительно создаем конфиг с путями, чтобы Bubblewrap ничего не спрашивал
           mkdir -p ~/.bubblewrap
-          echo "{\"jdkPath\":\"${JAVA_HOME}\",\"androidSdkPath\":\"${ANDROID_HOME}\"}" > ~/.bubblewrap/config.json
+          echo "{\"jdkPath\":\"$JAVA_PATH\",\"androidSdkPath\":\"$ANDROID_PATH\"}" > ~/.bubblewrap/config.json
+          cat ~/.bubblewrap/config.json
 
       - name: Generate and Build APK
+        env:
+          JAVA_HOME: ${{ steps.java.outputs.path }}
         run: |
-          bubblewrap update
-          bubblewrap build
+          bubblewrap update --manifest https://turovfy-app.onrender.com/manifest.json || true
+          bubblewrap build --manifest twa-manifest.json
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
