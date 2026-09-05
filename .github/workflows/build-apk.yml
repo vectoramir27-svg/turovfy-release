@@ -84,6 +84,7 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
+                  maven { url 'https://maven.google.com' }
               }
               dependencies {
                   classpath 'com.android.tools.build:gradle:8.1.1'
@@ -93,6 +94,7 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
+                  maven { url 'https://maven.google.com' }
               }
           }
           EOF
@@ -124,8 +126,7 @@ jobs:
       - name: Build APK with Gradle
         run: |
           cd my-app
-          gradle wrapper --gradle-version 8.4
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
