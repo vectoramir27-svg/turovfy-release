@@ -1,0 +1,25 @@
+{
+  "name": "TurovFy",
+  "shortName": "TurovFy",
+  "startUrl": "/",
+  "display": "standalone",
+  "themeColor": "#050507",
+  "backgroundColor": "#050507",
+  "host": "turovfy-app.onrender.com",
+  "launchUrl": "https://turovfy-app.onrender.com/",
+  "packageId": "com.onrender.turovfy_app.twa",
+  "launcherName": "TurovFy",
+  "iconUrl": "https://turovfy-app.onrender.com/assets/logo.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "android.keystore",
+    "alias": "android"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://turovfy-app.onrender.com/manifest.json",
+  "shortcuts": [],
+  "features": {},
+  "alphauros": false
+}
