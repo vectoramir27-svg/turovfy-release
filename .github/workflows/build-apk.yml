@@ -31,6 +31,13 @@ jobs:
           mkdir -p my-app/app/src/main/res/values
           mkdir -p my-app/app/src/main/res/mipmap-hdpi
 
+          # gradle.properties (Критически важно для плагина 8.1.1)
+          cat << 'EOF' > my-app/gradle.properties
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          EOF
+
           cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
