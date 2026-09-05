@@ -25,13 +25,20 @@ jobs:
       - name: Build Standalone TWA APK
         run: |
           mkdir -p twa-project/app/src/main/res/values
-          mkdir -p twa-project/app/src/main/res/drawable
+          mkdir -p twa-project/app/src/main/res/mipmap-xxxhdpi
           mkdir -p twa-project/gradle/wrapper
 
-          # Скачиваем официальную иконку приложения
-          curl -s -L -o twa-project/app/src/main/res/drawable/ic_launcher.png https://turovfy-app.onrender.com/assets/logo.png || true
-          if [ ! -s twa-project/app/src/main/res/drawable/ic_launcher.png ]; then
-            convert -size 512x512 xc:#121216 twa-project/app/src/main/res/drawable/ic_launcher.png 2>/dev/null || true
+          # Добавляем обязательную поддержку AndroidX
+          cat <<'EOF' > twa-project/gradle.properties
+          android.useAndroidX=true
+          android.enableJetifier=true
+          org.gradle.jvmargs=-Xmx2048m
+          EOF
+
+          # Скачиваем иконку приложения
+          curl -s -L -o twa-project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png https://turovfy-app.onrender.com/assets/logo.png || true
+          if [ ! -s twa-project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png ]; then
+            convert -size 512x512 xc:#121216 twa-project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png 2>/dev/null || true
           fi
 
           # Конфигурация корневого Gradle
@@ -60,7 +67,7 @@ jobs:
           }
           EOF
 
-          # Конфигурация сборки модуля приложения TWA
+          # Конфигурация модуля приложения TWA
           cat <<'EOF' > twa-project/app/build.gradle
           plugins {
               id 'com.android.application'
@@ -102,12 +109,12 @@ jobs:
           }
           EOF
 
-          # AndroidManifest с запуском Trusted Web Activity
+          # AndroidManifest TWA
           cat <<'EOF' > twa-project/app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <application
                   android:allowBackup="true"
-                  android:icon="@drawable/ic_launcher"
+                  android:icon="@mipmap/ic_launcher"
                   android:label="${launcherName}"
                   android:supportsRtl="true"
                   android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
@@ -143,7 +150,7 @@ jobs:
           </manifest>
           EOF
 
-          # Скачивание Gradle wrapper и запуск сборки
+          # Сборка приложения
           cd twa-project
           gradle wrapper --gradle-version 8.2
           chmod +x gradlew
