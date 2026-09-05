@@ -30,19 +30,27 @@ jobs:
       - name: Install Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
 
-      - name: Initialize and Build TWA APK
+      - name: Configure and Build TWA APK
         run: |
+          mkdir -p ~/.bubblewrap
+          cat <<EOF > ~/.bubblewrap/config.json
+          {
+            "jdkPath": "${JAVA_HOME}",
+            "androidSdkPath": "${ANDROID_HOME}"
+          }
+          EOF
+
           mkdir build-twa && cd build-twa
-          
-          # Инициализация приложения через манифест твоего работающего сервера
-          bubblewrap init --manifest="https://turovfy-app.onrender.com/manifest.json"
-          
-          # Автоматическая генерация ключа подписи приложения
+
+          # Инициализация манифеста без интерактивных вопросов
+          bubblewrap init --manifest="https://turovfy-app.onrender.com/manifest.json" --skipQuestions
+
+          # Генерация ключа подписи
           keytool -genkeypair -v -keystore android.keystore -alias turovfy -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass "turovfy123" -keypass "turovfy123" \
             -dname "CN=TurovFy, OU=Mobile, O=Turov, L=Moscow, S=Moscow, C=RU"
-            
-          # Сборка готового APK
+
+          # Сборка готового релизного APK
           bubblewrap build --skipPwaValidation
 
       - name: Upload APK Artifact
