@@ -29,21 +29,16 @@ jobs:
       - name: Install Bubblewrap
         run: npm install -g @bubblewrap/cli
 
-      - name: Bypass Interactive Prompts
+      - name: Build APK Non-Interactively
         env:
           JAVA_PATH: ${{ steps.java.outputs.path }}
           ANDROID_PATH: ${{ env.ANDROID_HOME }}
         run: |
           mkdir -p ~/.bubblewrap
           echo "{\"jdkPath\":\"$JAVA_PATH\",\"androidSdkPath\":\"$ANDROID_PATH\"}" > ~/.bubblewrap/config.json
-          cat ~/.bubblewrap/config.json
-
-      - name: Generate and Build APK
-        env:
-          JAVA_HOME: ${{ steps.java.outputs.path }}
-        run: |
-          bubblewrap update --manifest https://turovfy-app.onrender.com/manifest.json || true
-          bubblewrap build --manifest twa-manifest.json
+          
+          # Запускаем сборку по готовому twa-manifest.json без интерактивных запросов
+          bubblewrap build --manifest twa-manifest.json --skip-icon-validation
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
