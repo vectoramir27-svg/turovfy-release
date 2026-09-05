@@ -30,7 +30,8 @@ jobs:
 
       - name: Initialize and Build TWA APK
         run: |
-          bubblewrap init --manifest https://turovfy-app.onrender.com/manifest.json --batch
+          # Передаем 'n' через stdin, чтобы пропустить интерактивный вопрос про установку JDK
+          echo "n" | bubblewrap init --manifest https://turovfy-app.onrender.com/manifest.json
           bubblewrap build --batch
 
       - name: Upload APK Artifact
