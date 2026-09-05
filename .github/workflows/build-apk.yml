@@ -40,10 +40,13 @@ jobs:
           }
           EOF
 
-          # Запускаем локальный веб-сервер для отдачи манифеста
-          python3 -m http.server 8080 &
-          SERVER_PID=$!
-          sleep 2
+          # Будим спящий Render и ждем ответа 200 OK
+          echo "Ожидание пробуждения Render..."
+          until [ \$(curl -s -o /dev/null -w "%{http_code}" https://turovfy-app.onrender.com/manifest.json) -eq 200 ]; do
+            echo "Render еще спит, ждем 5 секунд..."
+            sleep 5
+          done
+          echo "Render активен и отдает manifest.json!"
 
           mkdir build-twa && cd build-twa
 
@@ -52,21 +55,14 @@ jobs:
             -storepass "turovfy123" -keypass "turovfy123" \
             -dname "CN=TurovFy, OU=Mobile, O=Turov, L=Moscow, S=Moscow, C=RU"
 
-          # Инициализируем проект через локальный URL
-          bubblewrap init --manifest="http://localhost:8080/manifest.json" --skipQuestions
+          # Инициализируем проект с живого сайта
+          bubblewrap init --manifest="https://turovfy-app.onrender.com/manifest.json" --skipQuestions
 
-          # Останавливаем временный веб-сервер
-          kill $SERVER_PID || true
-
-          # Подменяем локальный хост на боевой домен Render
-          sed -i 's/localhost:8080/turovfy-app.onrender.com/g' twa-manifest.json
-          sed -i 's/http:\/\/turovfy-app.onrender.com/https:\/\/turovfy-app.onrender.com/g' twa-manifest.json
-
-          # Задаем пароли для автоматической сборки
+          # Пароли подписи для Bubblewrap
           export BUBBLEWRAP_KEYSTORE_PASSWORD="turovfy123"
           export BUBBLEWRAP_KEY_PASSWORD="turovfy123"
 
-          # Собираем релизный APK
+          # Сборка готового APK
           bubblewrap build --skipPwaValidation
 
       - name: Upload APK Artifact
