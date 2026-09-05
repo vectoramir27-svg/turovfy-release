@@ -40,24 +40,33 @@ jobs:
           }
           EOF
 
+          # Запускаем локальный веб-сервер для отдачи манифеста
+          python3 -m http.server 8080 &
+          SERVER_PID=$!
+          sleep 2
+
           mkdir build-twa && cd build-twa
 
-          # Генерируем ключ для подписи релиза
+          # Генерируем ключ для подписи
           keytool -genkeypair -v -keystore android.keystore -alias turovfy -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass "turovfy123" -keypass "turovfy123" \
             -dname "CN=TurovFy, OU=Mobile, O=Turov, L=Moscow, S=Moscow, C=RU"
 
-          # Инициализируем проект из локального manifest.json без опроса сети
-          bubblewrap init --manifest="../manifest.json" --skipQuestions
+          # Инициализируем проект через локальный URL
+          bubblewrap init --manifest="http://localhost:8080/manifest.json" --skipQuestions
 
-          # Генерируем нативный проект Android
-          echo "no" | bubblewrap build --skipPwaValidation || true
-          
-          # Задаем пароли для сборки и подписи
+          # Останавливаем временный веб-сервер
+          kill $SERVER_PID || true
+
+          # Подменяем локальный хост на боевой домен Render
+          sed -i 's/localhost:8080/turovfy-app.onrender.com/g' twa-manifest.json
+          sed -i 's/http:\/\/turovfy-app.onrender.com/https:\/\/turovfy-app.onrender.com/g' twa-manifest.json
+
+          # Задаем пароли для автоматической сборки
           export BUBBLEWRAP_KEYSTORE_PASSWORD="turovfy123"
           export BUBBLEWRAP_KEY_PASSWORD="turovfy123"
 
-          # Если проект готов, выполняем финальную сборку APK
+          # Собираем релизный APK
           bubblewrap build --skipPwaValidation
 
       - name: Upload APK Artifact
