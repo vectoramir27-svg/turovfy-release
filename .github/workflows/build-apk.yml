@@ -1,163 +1,40 @@
-name: Build Android APK (TWA)
+name: Build TurovFy APK
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [ main, master ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v3
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          distribution: 'zulu'
+          node-version: 18
+
+      - name: Install Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Install Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build Standalone TWA APK
+      - name: Install Bubblewrap CLI
+        run: npm i -g @bubblewrap/cli
+
+      - name: Initialize and Build TWA APK
         run: |
-          mkdir -p twa-project/app/src/main/res/values
-          mkdir -p twa-project/app/src/main/res/mipmap-xxxhdpi
-          mkdir -p twa-project/gradle/wrapper
-
-          # Добавляем обязательную поддержку AndroidX
-          cat <<'EOF' > twa-project/gradle.properties
-          android.useAndroidX=true
-          android.enableJetifier=true
-          org.gradle.jvmargs=-Xmx2048m
-          EOF
-
-          # Скачиваем иконку приложения
-          curl -s -L -o twa-project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png https://turovfy-app.onrender.com/assets/logo.png || true
-          if [ ! -s twa-project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png ]; then
-            convert -size 512x512 xc:#121216 twa-project/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png 2>/dev/null || true
-          fi
-
-          # Конфигурация корневого Gradle
-          cat <<'EOF' > twa-project/settings.gradle
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          rootProject.name = "TurovFy"
-          include ':app'
-          EOF
-
-          cat <<'EOF' > twa-project/build.gradle
-          plugins {
-              id 'com.android.application' version '8.2.0' apply false
-          }
-          EOF
-
-          # Конфигурация модуля приложения TWA
-          cat <<'EOF' > twa-project/app/build.gradle
-          plugins {
-              id 'com.android.application'
-          }
-
-          android {
-              namespace 'com.turovfy.app'
-              compileSdk 34
-
-              defaultConfig {
-                  applicationId "com.turovfy.app"
-                  minSdk 21
-                  targetSdk 34
-                  versionCode 1
-                  versionName "1.0.0"
-
-                  manifestPlaceholders = [
-                      hostName: "turovfy-app.onrender.com",
-                      defaultUrl: "https://turovfy-app.onrender.com",
-                      launcherName: "TurovFy",
-                      assetStatements: "[]"
-                  ]
-              }
-
-              buildTypes {
-                  release {
-                      minifyEnabled false
-                      signingConfig signingConfigs.debug
-                  }
-              }
-              compileOptions {
-                  sourceCompatibility JavaVersion.VERSION_17
-                  targetCompatibility JavaVersion.VERSION_17
-              }
-          }
-
-          dependencies {
-              implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
-          }
-          EOF
-
-          # AndroidManifest TWA
-          cat <<'EOF' > twa-project/app/src/main/AndroidManifest.xml
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <application
-                  android:allowBackup="true"
-                  android:icon="@mipmap/ic_launcher"
-                  android:label="${launcherName}"
-                  android:supportsRtl="true"
-                  android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
-
-                  <meta-data
-                      android:name="asset_statements"
-                      android:value="${assetStatements}" />
-
-                  <activity
-                      android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
-                      android:exported="true"
-                      android:label="${launcherName}">
-
-                      <meta-data
-                          android:name="android.support.customtabs.trusted.DEFAULT_URL"
-                          android:value="${defaultUrl}" />
-
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-
-                      <intent-filter android:autoVerify="true">
-                          <action android:name="android.intent.action.VIEW" />
-                          <category android:name="android.intent.category.DEFAULT" />
-                          <category android:name="android.intent.category.BROWSABLE" />
-                          <data
-                              android:scheme="https"
-                              android:host="${hostName}" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
-
-          # Сборка приложения
-          cd twa-project
-          gradle wrapper --gradle-version 8.2
-          chmod +x gradlew
-          ./gradlew assembleRelease
+          bubblewrap init --manifest https://turovfy-app.onrender.com/manifest.json --batch
+          bubblewrap build --batch
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TurovFy-Release-APK
-          path: twa-project/app/build/outputs/apk/release/*.apk
+          name: TurovFy-Android-App
+          path: '*.apk'
