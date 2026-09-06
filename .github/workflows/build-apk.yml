@@ -25,14 +25,14 @@ jobs:
         with:
           gradle-version: '8.4'
 
-      - name: Generate Native TWA Android Project
+      - name: Generate Native Android Project
         run: |
           mkdir -p my-app/app/src/main/java/com/turovfy/app
           mkdir -p my-app/app/src/main/res/values
           mkdir -p my-app/app/src/main/res/mipmap-xxxhdpi
           mkdir -p my-app/app/src/main/res/mipmap-hdpi
 
-          # Скачиваем иконку
+          # Иконка приложения
           curl -s -L "https://turovfy-app.onrender.com/assets/logo.png" -o my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           cp my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
 
@@ -43,81 +43,157 @@ jobs:
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-          # AndroidManifest.xml: полный набор разрешений для фонового аудио и автовоспроизведения
+          # AndroidManifest.xml
           cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.turovfy.app">
-
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
               <uses-permission android:name="android.permission.WAKE_LOCK" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-
               <application
                   android:allowBackup="true"
                   android:icon="@mipmap/ic_launcher"
                   android:roundIcon="@mipmap/ic_launcher"
-                  android:label="@string/app_name"
-                  android:supportsRtl="true"
+                  android:label="TurovFy"
+                  android:hardwareAccelerated="true"
                   android:usesCleartextTraffic="true"
-                  android:theme="@android:style/Theme.Translucent.NoTitleBar">
-
-                  <meta-data
-                      android:name="asset_statements"
-                      android:value="[]" />
-
+                  android:theme="@style/Theme.AppCompat.NoActionBar">
                   <activity
-                      android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
-                      android:exported="true"
-                      android:label="@string/app_name">
-
-                      <meta-data
-                          android:name="android.support.customtabs.trusted.DEFAULT_URL"
-                          android:value="https://turovfy-app.onrender.com/" />
-
-                      <meta-data
-                          android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR"
-                          android:resource="@color/colorPrimary" />
-
-                      <meta-data
-                          android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR"
-                          android:resource="@color/colorPrimary" />
-
-                      <!-- Включаем поддержку медиа-сессий и фонового стриминга для кастом-табов -->
-                      <meta-data
-                          android:name="android.support.customtabs.trusted.METADATA_SHARE_TARGET"
-                          android:value="true" />
-
+                      android:name=".MainActivity"
+                      android:configChanges="orientation|screenSize|keyboardHidden"
+                      android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-
-                      <intent-filter android:autoVerify="true">
-                          <action android:name="android.intent.action.VIEW" />
-                          <category android:name="android.intent.category.DEFAULT" />
-                          <category android:name="android.intent.category.BROWSABLE" />
-                          <data
-                              android:scheme="https"
-                              android:host="turovfy-app.onrender.com" />
                       </intent-filter>
                   </activity>
               </application>
           </manifest>
           EOF
 
-          # strings.xml & colors.xml
+          # MainActivity.java: аппаратный WebView + фикс попапов авторизации
+          cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
+          package com.turovfy.app;
+
+          import android.app.Activity;
+          import android.app.Dialog;
+          import android.os.Bundle;
+          import android.os.Message;
+          import android.view.KeyEvent;
+          import android.view.ViewGroup;
+          import android.webkit.CookieManager;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          public class MainActivity extends Activity {
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  webView = new WebView(this);
+
+                  WebSettings s = webView.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setDatabaseEnabled(true);
+                  s.setMediaPlaybackRequiresUserGesture(false);
+                  s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                  s.setAllowFileAccess(true);
+                  s.setAllowContentAccess(true);
+                  s.setCacheMode(WebSettings.LOAD_DEFAULT);
+                  
+                  // Запрещаем мобильный зум и ресайз страницы
+                  s.setSupportZoom(false);
+                  s.setBuiltInZoomControls(false);
+                  s.setDisplayZoomControls(false);
+
+                  // Включаем поддержку модальных окон для Google Login
+                  s.setSupportMultipleWindows(true);
+                  s.setJavaScriptCanOpenWindowsAutomatically(true);
+
+                  // Полный десктопный UA, чтобы Google не понимал, что это WebView
+                  s.setUserAgentString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+
+                  CookieManager cookieManager = CookieManager.getInstance();
+                  cookieManager.setAcceptCookie(true);
+                  cookieManager.setAcceptThirdPartyCookies(webView, true);
+
+                  webView.setWebViewClient(new WebViewClient());
+                  
+                  // Перехват всплывающих окон авторизации внутри приложения
+                  webView.setWebChromeClient(new WebChromeClient() {
+                      @Override
+                      public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                          WebView newWebView = new WebView(MainActivity.this);
+                          WebSettings newSettings = newWebView.getSettings();
+                          newSettings.setJavaScriptEnabled(true);
+                          newSettings.setDomStorageEnabled(true);
+                          newSettings.setUserAgentString(s.getUserAgentString());
+
+                          CookieManager.getInstance().setAcceptThirdPartyCookies(newWebView, true);
+
+                          Dialog dialog = new Dialog(MainActivity.this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+                          dialog.setContentView(newWebView, new ViewGroup.LayoutParams(
+                              ViewGroup.LayoutParams.MATCH_PARENT, 
+                              ViewGroup.LayoutParams.MATCH_PARENT
+                          ));
+                          dialog.show();
+
+                          newWebView.setWebViewClient(new WebViewClient() {
+                              @Override
+                              public void onPageFinished(WebView v, String url) {
+                                  super.onPageFinished(v, url);
+                                  // Если вернулись на страницу приложения после входа — закрываем попап
+                                  if (url.contains("turovfy-app.onrender.com")) {
+                                      dialog.dismiss();
+                                      webView.reload();
+                                  }
+                              }
+                          });
+
+                          newWebView.setWebChromeClient(new WebChromeClient() {
+                              @Override
+                              public void onCloseWindow(WebView window) {
+                                  dialog.dismiss();
+                              }
+                          });
+
+                          ((WebView.WebViewTransport) resultMsg.obj).setWebView(newWebView);
+                          resultMsg.sendToTarget();
+                          return true;
+                      }
+                  });
+
+                  webView.loadUrl("https://turovfy-app.onrender.com/");
+                  setContentView(webView);
+              }
+
+              @Override
+              protected void onPause() {
+                  super.onPause();
+                  // Не глушим WebView в фоне, сохраняя воспроизведение
+              }
+
+              @Override
+              public boolean onKeyDown(int keyCode, KeyEvent event) {
+                  if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
+                      webView.goBack();
+                      return true;
+                  }
+                  return super.onKeyDown(keyCode, event);
+              }
+          }
+          EOF
+
+          # strings.xml
           cat << 'EOF' > my-app/app/src/main/res/values/strings.xml
           <resources>
               <string name="app_name">TurovFy</string>
-          </resources>
-          EOF
-
-          cat << 'EOF' > my-app/app/src/main/res/values/colors.xml
-          <resources>
-              <color name="colorPrimary">#050507</color>
           </resources>
           EOF
 
@@ -146,27 +222,23 @@ jobs:
           # build.gradle (app)
           cat << 'EOF' > my-app/app/build.gradle
           apply plugin: 'com.android.application'
-
           android {
               namespace 'com.turovfy.app'
-              compileSdk 34
-
+              compileSdk 33
               defaultConfig {
                   applicationId "com.turovfy.app"
                   minSdk 21
-                  targetSdk 34
+                  targetSdk 33
                   versionCode 1
                   versionName "1.0"
               }
-
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
               }
           }
-
           dependencies {
-              implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
           }
           EOF
 
