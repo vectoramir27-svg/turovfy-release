@@ -32,7 +32,7 @@ jobs:
           mkdir -p my-app/app/src/main/res/mipmap-hdpi
           mkdir -p my-app/app/src/main/res/mipmap-xxxhdpi
 
-          # Гарантируем наличие иконок
+          # Копируем иконки
           if [ -f "assets/logo.png" ]; then
             cp assets/logo.png my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
             cp assets/logo.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
@@ -48,7 +48,7 @@ jobs:
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-          # AndroidManifest.xml: Добавлены все права для шторки уведомлений и мультимедиа
+          # AndroidManifest.xml
           cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -91,7 +91,7 @@ jobs:
           </manifest>
           EOF
 
-          # AudioPlayerService.java: чистая реализация MediaSession для Samsung One UI
+          # AudioPlayerService.java: агрессивная MediaSession для вызова шторки Samsung One UI
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/AudioPlayerService.java
           package com.turovfy.app;
 
@@ -121,7 +121,7 @@ jobs:
               private NotificationManager notificationManager;
               private final String CHANNEL_ID = "turovfy_playback";
               private String currentTitle = "TurovFy";
-              private String currentArtist = "Ожидание выбора";
+              private String currentArtist = "Воспроизведение музыки";
               private Bitmap currentCover = null;
               private boolean isPlaying = true;
 
@@ -142,7 +142,7 @@ jobs:
                       notificationManager.createNotificationChannel(chan);
                   }
 
-                  mediaSession = new MediaSession(this, "TurovFySession");
+                  mediaSession = new MediaSession(this, "TurovFyMediaSession");
                   mediaSession.setCallback(new MediaSession.Callback() {
                       @Override
                       public void onPlay() { MainActivity.triggerJs("togglePlay()"); }
@@ -168,11 +168,13 @@ jobs:
               public void updatePlaybackState(boolean playing) {
                   this.isPlaying = playing;
                   int state = playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED;
+                  
                   PlaybackState.Builder stateBuilder = new PlaybackState.Builder()
                       .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE |
                                   PlaybackState.ACTION_PLAY_PAUSE |
                                   PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
                       .setState(state, PlaybackState.PLAYBACK_POSITION_UNKNOWN, 1.0f);
+                  
                   mediaSession.setPlaybackState(stateBuilder.build());
 
                   if (notificationManager != null) {
@@ -181,8 +183,8 @@ jobs:
               }
 
               public void updateTrackInfo(final String title, final String artist, final String coverUrl) {
-                  this.currentTitle = title;
-                  this.currentArtist = artist;
+                  this.currentTitle = (title != null && !title.isEmpty()) ? title : "TurovFy";
+                  this.currentArtist = (artist != null && !artist.isEmpty()) ? artist : "Музыка";
 
                   new Thread(() -> {
                       Bitmap bitmap = null;
@@ -201,8 +203,8 @@ jobs:
                       this.currentCover = bitmap;
 
                       MediaMetadata.Builder metaBuilder = new MediaMetadata.Builder()
-                          .putString(MediaMetadata.METADATA_KEY_TITLE, title)
-                          .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
+                          .putString(MediaMetadata.METADATA_KEY_TITLE, currentTitle)
+                          .putString(MediaMetadata.METADATA_KEY_ARTIST, currentArtist)
                           .putString(MediaMetadata.METADATA_KEY_ALBUM, "TurovFy");
 
                       if (bitmap != null) {
@@ -229,10 +231,18 @@ jobs:
                       builder = new Notification.Builder(this);
                   }
 
+                  // Принудительно задаем стиль медиаплеера через Notification.MediaStyle
+                  try {
+                      Notification.MediaStyle style = new Notification.MediaStyle();
+                      style.setMediaSession(mediaSession.getSessionToken());
+                      builder.setStyle(style);
+                  } catch (Exception ignored) {}
+
                   builder.setContentTitle(currentTitle)
                          .setContentText(currentArtist)
                          .setSmallIcon(R.mipmap.ic_launcher)
                          .setContentIntent(pi)
+                         .setOngoing(true)
                          .setVisibility(Notification.VISIBILITY_PUBLIC);
 
                   if (currentCover != null) {
@@ -261,7 +271,7 @@ jobs:
           }
           EOF
 
-          # MainActivity.java: запрос runtime-прав + аппаратное GPU ускорение + мост метаданных
+          # MainActivity.java: принудительный запрос POST_NOTIFICATIONS и стабильный WebView
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
           package com.turovfy.app;
 
@@ -310,7 +320,6 @@ jobs:
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
 
-                  // Запрашиваем права на уведомления для Android 13+ (чтобы панель плеера гарантированно появилась)
                   if (Build.VERSION.SDK_INT >= 33) {
                       if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                           requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 101);
@@ -339,7 +348,6 @@ jobs:
                   s.setMediaPlaybackRequiresUserGesture(false);
                   s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
-                  // Аппаратное ускорение рендеринга и мгновенная загрузка из кэша
                   s.setCacheMode(WebSettings.LOAD_DEFAULT);
                   webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
