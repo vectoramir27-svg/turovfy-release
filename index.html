@@ -1682,7 +1682,7 @@
   <nav>
     <div class="logo" onclick="goToHome()">
       <div class="logo-img-wrapper">
-        <img src="/assets/logo.png" alt="Logo" class="logo-img" onerror="this.style.display='none'">
+        <img src="assets/logo.png" alt="Logo" class="logo-img" onerror="this.style.display='none'">
       </div>
       TUROV<span>FY</span>
     </div>
@@ -2081,7 +2081,6 @@
     <span id="toastMsg">Уведомление</span>
   </div>
 
-  <!-- СКРЫТЫЙ ПЛЕЕР БЕЗ КРИТИЧЕСКИХ ОШИБОК ОРИГИНАЛЬНОГО API -->
   <div style="position: fixed; bottom: 0; left: 0; width: 64px; height: 64px; opacity: 0.001; z-index: -999; pointer-events: none; overflow: hidden;">
     <div id="yt-player-instance"></div>
   </div>
@@ -2089,6 +2088,21 @@
   <script>
     const GOOGLE_CLIENT_ID = "626469255866-clqnscvcv71s9baj7rs32u49ekmmertk.apps.googleusercontent.com";
     const DEFAULT_CATALOG_QUERY = 'Phonk 2026';
+
+    // ВНУТРЕННЯЯ МАРШРУТИЗАЦИЯ НА СЕРВЕР RENDER
+    const BACKEND_URL = "https://turovfy-app.onrender.com";
+    const originalFetch = window.fetch;
+    window.fetch = function(url, options) {
+      if (typeof url === 'string' && url.startsWith('/')) {
+        url = BACKEND_URL + url;
+      }
+      return originalFetch(url, options);
+    };
+
+    // Блокировка глушения фонового воспроизведения в YouTube IFrame API
+    Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });
+    Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });
+    window.addEventListener('visibilitychange', (e) => e.stopImmediatePropagation(), true);
 
     const searchInput = document.getElementById('searchInput');
     const trackGrid = document.getElementById('trackGrid');
@@ -2721,7 +2735,7 @@
 
         const thumbHtml = name === 'Любимое'
           ? `<div class="thumb-wrap" style="background:#111216; display:flex; align-items:center; justify-content:center;">
-               <img src="/assets/favorite.png" alt="Любимое" class="thumb-img" style="width: 82%; height: 82%; object-fit: contain; border-radius: 8px;">
+               <img src="assets/favorite.png" alt="Любимое" class="thumb-img" style="width: 82%; height: 82%; object-fit: contain; border-radius: 8px;">
              </div>`
           : `<div class="thumb-wrap" style="background:#111216;"></div>`;
 
