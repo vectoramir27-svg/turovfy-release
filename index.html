@@ -2839,7 +2839,7 @@
       const nameInput = document.getElementById('customAuthName');
       const name = nameInput.value.trim();
       if (!name) {
-        showToast("Пожалуйста, укажите имя или никнейм");
+        showToast("Укажите никнейм");
         return;
       }
 
@@ -2857,7 +2857,6 @@
       closeAuthModal();
       nameInput.value = '';
 
-      // Синхронизируем или восстанавливаем плейлисты
       fetch('/api/user/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2865,9 +2864,7 @@
       }).then(res => res.json()).then(dbData => {
         userPlaylists = dbData.playlists || { "Любимое": [] };
         restoreSavedState(dbData.state);
-      }).catch(err => {
-        console.warn("Локальный режим пользователя:", err);
-      });
+      }).catch(err => console.warn(err));
 
       showToast(`Добро пожаловать, ${name}!`);
     }
@@ -3005,7 +3002,7 @@
 
       updateDockHeartState();
 
-      // Шлем точные данные прямо в нативный Android Service для шторки Samsung One UI
+      // Мгновенная передача названия и обложки нативной шторке Android
       if (window.AndroidBridge && typeof window.AndroidBridge.updateMetadata === 'function') {
         window.AndroidBridge.updateMetadata(track.title || '', track.artist || '', track.cover || '');
       }
