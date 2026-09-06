@@ -1,4 +1,4 @@
-name: Build TurovFy APK
+name: Build Standalone TurovFy APK
 
 on:
   push:
@@ -25,25 +25,38 @@ jobs:
         with:
           gradle-version: '8.4'
 
-      - name: Generate Native Android Project
+      - name: Prepare Standalone Android App
         run: |
           mkdir -p my-app/app/src/main/java/com/turovfy/app
+          mkdir -p my-app/app/src/main/assets
           mkdir -p my-app/app/src/main/res/values
-          mkdir -p my-app/app/src/main/res/mipmap-xxxhdpi
           mkdir -p my-app/app/src/main/res/mipmap-hdpi
+          mkdir -p my-app/app/src/main/res/mipmap-xxxhdpi
 
-          # Скачиваем иконку приложения
-          curl -s -L "https://turovfy-app.onrender.com/assets/logo.png" -o my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-          cp my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          # Копируем фронтенд внутрь APK
+          if [ -f "index.html" ]; then
+            cp index.html my-app/app/src/main/assets/
+          fi
+          if [ -d "assets" ]; then
+            cp -r assets/* my-app/app/src/main/assets/
+            # Забираем иконку из папки assets
+            if [ -f "assets/logo.png" ]; then
+              cp assets/logo.png my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+              cp assets/logo.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
+            elif [ -f "assets/icon.png" ]; then
+              cp assets/icon.png my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+              cp assets/icon.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
+            fi
+          fi
 
-          # gradle.properties (отключаем Jetifier, чтобы убрать конфликт классов Kotlin)
+          # gradle.properties
           cat << 'EOF' > my-app/gradle.properties
           android.useAndroidX=true
           android.enableJetifier=false
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-          # AndroidManifest.xml с разрешениями для фонового аудио и службы
+          # AndroidManifest.xml
           cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -85,7 +98,7 @@ jobs:
           </manifest>
           EOF
 
-          # Сервис для непрерывного фонового воспроизведения при блокировке экрана
+          # Сервис для непрерывного воспроизведения в фоне и при блокировке
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/AudioPlayerService.java
           package com.turovfy.app;
 
@@ -111,17 +124,17 @@ jobs:
                       wakeLock.acquire();
                   }
 
-                  String channelId = "turovfy_playback";
+                  String channelId = "turovfy_channel";
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       NotificationChannel chan = new NotificationChannel(
-                          channelId, "TurovFy Background Audio", NotificationManager.IMPORTANCE_LOW);
+                          channelId, "TurovFy Playback", NotificationManager.IMPORTANCE_LOW);
                       NotificationManager manager = getSystemService(NotificationManager.class);
                       if (manager != null) manager.createNotificationChannel(chan);
                   }
 
                   Notification notification = new NotificationCompat.Builder(this, channelId)
                       .setContentTitle("TurovFy")
-                      .setContentText("Воспроизведение музыки в фоне")
+                      .setContentText("Фоновое воспроизведение активно")
                       .setSmallIcon(R.mipmap.ic_launcher)
                       .setPriority(NotificationCompat.PRIORITY_LOW)
                       .build();
@@ -149,7 +162,7 @@ jobs:
           }
           EOF
 
-          # MainActivity.java с запуском службы и перенаправлением Google Login в Chrome
+          # MainActivity.java: запуск локальных ассетов + разблокировка аудио и Google Login
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
           package com.turovfy.app;
 
@@ -174,6 +187,7 @@ jobs:
                   super.onCreate(savedInstanceState);
                   webView = new WebView(this);
 
+                  // Запускаем фоновую службу
                   Intent serviceIntent = new Intent(this, AudioPlayerService.class);
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       startForegroundService(serviceIntent);
@@ -189,12 +203,14 @@ jobs:
                   s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                   s.setAllowFileAccess(true);
                   s.setAllowContentAccess(true);
-                  s.setCacheMode(WebSettings.LOAD_DEFAULT);
+                  s.setAllowFileAccessFromFileURLs(true);
+                  s.setAllowUniversalAccessFromFileURLs(true);
                   
                   s.setSupportZoom(false);
                   s.setBuiltInZoomControls(false);
                   s.setDisplayZoomControls(false);
 
+                  // Десктопный UA для обхода ограничений авторизации
                   s.setUserAgentString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
 
                   CookieManager cookieManager = CookieManager.getInstance();
@@ -213,32 +229,23 @@ jobs:
                                   return true;
                               } catch (Exception e) {
                                   Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                                  intent.setPackage("com.android.chrome");
-                                  try {
-                                      startActivity(intent);
-                                      return true;
-                                  } catch (Exception ex) {
-                                      return false;
-                                  }
+                                  startActivity(intent);
+                                  return true;
                               }
                           }
                           return false;
                       }
                   });
 
-                  webView.loadUrl("https://turovfy-app.onrender.com/");
+                  // Загружаем локальный интерфейс из APK
+                  webView.loadUrl("file:///android_asset/index.html");
                   setContentView(webView);
-              }
-
-              @Override
-              protected void onResume() {
-                  super.onResume();
-                  CookieManager.getInstance().flush();
               }
 
               @Override
               protected void onPause() {
                   super.onPause();
+                  // Не глушим WebView при сворачивании
               }
 
               @Override
@@ -274,14 +281,13 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
-                  maven { url 'https://maven.google.com' }
               }
           }
           EOF
 
           echo "include ':app'" > my-app/settings.gradle
 
-          # build.gradle (app) с исключением дубликатов kotlin-stdlib
+          # build.gradle (app)
           cat << 'EOF' > my-app/app/build.gradle
           apply plugin: 'com.android.application'
           android {
@@ -298,10 +304,6 @@ jobs:
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
               }
-          }
-          configurations.all {
-              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
-              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
           }
           dependencies {
               implementation 'androidx.appcompat:appcompat:1.6.1'
