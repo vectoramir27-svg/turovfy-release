@@ -29,27 +29,40 @@ jobs:
         run: |
           mkdir -p my-app/app/src/main/java/com/turovfy/app
           mkdir -p my-app/app/src/main/res/values
+          mkdir -p my-app/app/src/main/res/mipmap-xxxhdpi
           mkdir -p my-app/app/src/main/res/mipmap-hdpi
 
-          # gradle.properties (Критически важно для плагина 8.1.1)
+          # Скачиваем официальную иконку приложения
+          curl -s -L "https://turovfy-app.onrender.com/assets/logo.png" -o my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          cp my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
+
+          # gradle.properties
           cat << 'EOF' > my-app/gradle.properties
           android.useAndroidX=true
           android.enableJetifier=true
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
+          # AndroidManifest.xml с аппаратным ускорением и разрешениями для аудио/сети
           cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               package="com.turovfy.app">
               <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
               <application
                   android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
                   android:label="TurovFy"
+                  android:hardwareAccelerated="true"
                   android:usesCleartextTraffic="true"
                   android:theme="@style/Theme.AppCompat.NoActionBar">
                   <activity
                       android:name=".MainActivity"
+                      android:configChanges="orientation|screenSize|keyboardHidden"
                       android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -60,32 +73,84 @@ jobs:
           </manifest>
           EOF
 
+          # MainActivity.java: поддержка фонового аудио, WebAudio API и фикс Google OAuth
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
           package com.turovfy.app;
+
           import android.app.Activity;
+          import android.content.Intent;
+          import android.net.Uri;
           import android.os.Bundle;
+          import android.view.KeyEvent;
+          import android.webkit.CookieManager;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
+
           public class MainActivity extends Activity {
+              private WebView webView;
+
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
-                  WebView webView = new WebView(this);
-                  webView.getSettings().setJavaScriptEnabled(true);
-                  webView.getSettings().setDomStorageEnabled(true);
-                  webView.setWebViewClient(new WebViewClient());
+                  webView = new WebView(this);
+
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setDatabaseEnabled(true);
+                  settings.setMediaPlaybackRequiresUserGesture(false);
+                  settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                  settings.setAllowFileAccess(true);
+                  settings.setAllowContentAccess(true);
+                  settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+                  
+                  // Смена User-Agent, чтобы обойти блокировку Google OAuth и плеер отдавал WebM/MP3 потоки
+                  String defaultUA = settings.getUserAgentString();
+                  settings.setUserAgentString(defaultUA.replace("; wv", ""));
+
+                  CookieManager cookieManager = CookieManager.getInstance();
+                  cookieManager.setAcceptCookie(true);
+                  cookieManager.setAcceptThirdPartyCookies(webView, true);
+
+                  webView.setWebChromeClient(new WebChromeClient());
+                  webView.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                          // Если вход через сторонний Google Auth — открываем через системный браузер
+                          if (url.startsWith("https://accounts.google.com") || url.contains("accounts.google.com/o/oauth2")) {
+                              Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                              startActivity(intent);
+                              return true;
+                          }
+                          return false;
+                      }
+                  });
+
                   webView.loadUrl("https://turovfy-app.onrender.com/");
                   setContentView(webView);
+              }
+
+              @Override
+              public boolean onKeyDown(int keyCode, KeyEvent event) {
+                  if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
+                      webView.goBack();
+                      return true;
+                  }
+                  return super.onKeyDown(keyCode, event);
               }
           }
           EOF
 
+          # strings.xml
           cat << 'EOF' > my-app/app/src/main/res/values/strings.xml
           <resources>
               <string name="app_name">TurovFy</string>
           </resources>
           EOF
 
+          # build.gradle (project)
           cat << 'EOF' > my-app/build.gradle
           buildscript {
               repositories {
@@ -108,6 +173,7 @@ jobs:
 
           echo "include ':app'" > my-app/settings.gradle
 
+          # build.gradle (app)
           cat << 'EOF' > my-app/app/build.gradle
           apply plugin: 'com.android.application'
           android {
