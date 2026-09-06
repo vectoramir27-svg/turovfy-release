@@ -2188,8 +2188,10 @@
           'onStateChange': (e) => {
             if (e.data === YT.PlayerState.PLAYING) {
               setPlayState(true);
+              updateMediaSessionPlayback(true);
             } else if (e.data === YT.PlayerState.PAUSED) {
               setPlayState(false);
+              updateMediaSessionPlayback(false);
             } else if (e.data === YT.PlayerState.ENDED) {
               nextTrack();
             }
@@ -2197,6 +2199,12 @@
         }
       });
     };
+
+    function updateMediaSessionPlayback(isPlaying) {
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+      }
+    }
 
     function startProgressTimer() {
       if (progressTimer) clearInterval(progressTimer);
@@ -2582,7 +2590,7 @@
     }
 
     function isTrackLiked(trackId) {
-      const favs = userPlaylists['Любивое'] || [];
+      const favs = userPlaylists['Любимое'] || [];
       return favs.some(t => t.id === trackId);
     }
 
@@ -2988,6 +2996,23 @@
       if (mKCover) mKCover.src = track.cover || '';
 
       updateDockHeartState();
+
+      // Интеграция с Android шторкой и экраном блокировки
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: track.title,
+          artist: track.artist,
+          album: 'TurovFy',
+          artwork: [
+            { src: track.cover || '/assets/logo.png', sizes: '512x512', type: 'image/png' }
+          ]
+        });
+
+        navigator.mediaSession.setActionHandler('play', () => togglePlay());
+        navigator.mediaSession.setActionHandler('pause', () => togglePlay());
+        navigator.mediaSession.setActionHandler('previoustrack', () => prevTrack());
+        navigator.mediaSession.setActionHandler('nexttrack', () => nextTrack());
+      }
     }
 
     function playIndex(index) {
@@ -3030,6 +3055,7 @@
       }
 
       setPlayState(true);
+      updateMediaSessionPlayback(true);
       queueDatabaseSync();
     }
 
@@ -3040,9 +3066,11 @@
       if (state === YT.PlayerState.PLAYING) {
         yt.pauseVideo();
         setPlayState(false);
+        updateMediaSessionPlayback(false);
       } else {
         yt.playVideo();
         setPlayState(true);
+        updateMediaSessionPlayback(true);
       }
     }
 
