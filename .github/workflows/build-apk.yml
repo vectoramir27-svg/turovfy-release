@@ -87,7 +87,7 @@ jobs:
           </manifest>
           EOF
 
-          # AudioPlayerService.java: полноценная MediaSession со скачиванием обложки и обновлением шторки One UI
+          # AudioPlayerService.java: чистый системный Notification + MediaSession
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/AudioPlayerService.java
           package com.turovfy.app;
 
@@ -218,14 +218,10 @@ jobs:
                       builder = new Notification.Builder(this);
                   }
 
-                  Notification.MediaStyle style = new Notification.MediaStyle();
-                  style.setMediaSession(mediaSession.getSessionToken());
-
                   builder.setContentTitle(currentTitle)
                          .setContentText(currentArtist)
                          .setSmallIcon(R.mipmap.ic_launcher)
                          .setContentIntent(pi)
-                         .setStyle(style)
                          .setVisibility(Notification.VISIBILITY_PUBLIC);
 
                   if (currentCover != null) {
@@ -339,7 +335,6 @@ jobs:
                   s.setMediaPlaybackRequiresUserGesture(false);
                   s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
-                  // Моментальная загрузка из кэша и аппаратное GPU-ускорение
                   s.setCacheMode(WebSettings.LOAD_DEFAULT);
                   webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
@@ -350,7 +345,6 @@ jobs:
                   s.setSupportMultipleWindows(true);
                   s.setJavaScriptCanOpenWindowsAutomatically(true);
 
-                  // Чистый мобильный Chrome User-Agent для корректной работы Google Auth
                   s.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
                   CookieManager cookieManager = CookieManager.getInstance();
