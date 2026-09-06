@@ -2997,7 +2997,11 @@
 
       updateDockHeartState();
 
-      // Интеграция с Android шторкой и экраном блокировки
+      // Мост для вывода баннера и названия в шторку Android (Samsung One UI / MediaStyle)
+      if (window.AndroidBridge && typeof window.AndroidBridge.updateMetadata === 'function') {
+        window.AndroidBridge.updateMetadata(track.title || '', track.artist || '', track.cover || '');
+      }
+
       if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: track.title,
