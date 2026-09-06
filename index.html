@@ -18,7 +18,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://www.youtube.com/iframe_api"></script>
 
   <style>
@@ -1234,15 +1233,38 @@
     .auth-card p {
       font-size: 13px;
       color: var(--text-muted);
-      margin-bottom: 28px;
+      margin-bottom: 24px;
       line-height: 1.5;
     }
-    .google-slot-wrapper {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-      min-height: 44px;
+    .auth-input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 14px 18px;
+      color: white;
+      font-size: 15px;
+      outline: none;
+      margin-bottom: 14px;
+      transition: border-color 0.2s;
+    }
+    .auth-input:focus {
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+    .auth-submit-btn {
+      width: 100%;
+      background: #ffffff;
+      color: #000000;
+      border: none;
+      border-radius: 14px;
+      padding: 14px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+    .auth-submit-btn:active {
+      transform: scale(0.98);
     }
     .close-modal {
       position: absolute;
@@ -1868,10 +1890,10 @@
         </div>
         <div>
           <h2 id="profileName" style="font-size: 22px; font-weight: 700; color: #fff;">Гость</h2>
-          <p id="profileEmail" style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Войдите через Google для облачной синхронизации</p>
+          <p id="profileEmail" style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Войдите для персональной медиатеки и сохранения треков</p>
         </div>
         <button class="auth-btn" id="profileActionBtn" onclick="openAuthModal()" style="margin-top: 10px; padding: 10px 22px;">
-          Войти через Google
+          Войти в профиль
         </button>
       </div>
     </div>
@@ -2071,11 +2093,10 @@
     <div class="auth-card">
       <button class="close-modal" onclick="closeAuthModal()">✕</button>
       <h3>Вход в TurovFy</h3>
-      <p>Синхронизируйте свои плейлисты, медиатеку и персональные настройки звука.</p>
+      <p>Введите ваш никнейм для доступа к плейлистам и персональной медиатеке</p>
       
-      <div class="google-slot-wrapper">
-        <div id="googleBtnSlot"></div>
-      </div>
+      <input type="text" id="customAuthName" class="auth-input" placeholder="Ваше имя или никнейм" autocomplete="off">
+      <button class="auth-submit-btn" onclick="submitCustomAuth()">Войти</button>
     </div>
   </div>
 
@@ -2088,7 +2109,6 @@
   </div>
 
   <script>
-    const GOOGLE_CLIENT_ID = "626469255866-clqnscvcv71s9baj7rs32u49ekmmertk.apps.googleusercontent.com";
     const DEFAULT_CATALOG_QUERY = 'Phonk 2026';
 
     const searchInput = document.getElementById('searchInput');
@@ -2815,86 +2835,59 @@
       return card;
     }
 
-    function initGoogleAuth() {
-      if (!window.google || !window.google.accounts) {
-        setTimeout(initGoogleAuth, 300);
+    function submitCustomAuth() {
+      const nameInput = document.getElementById('customAuthName');
+      const name = nameInput.value.trim();
+      if (!name) {
+        showToast("Пожалуйста, укажите имя или никнейм");
         return;
       }
 
-      try {
-        google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: handleCredentialResponse,
-          auto_select: false,
-          cancel_on_tap_outside: true
-        });
+      const email = `${name.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user'}@turovfy.local`;
+      const avatarUrl = `https://api.dicebear.com/7.x/identicon/svg?seed=${encodeURIComponent(name)}`;
 
-        const btnSlot = document.getElementById("googleBtnSlot");
-        if (btnSlot) {
-          google.accounts.id.renderButton(
-            btnSlot,
-            { theme: "filled_black", size: "large", shape: "pill", width: 280, text: "continue_with" }
-          );
-        }
-      } catch (err) {
-        console.error("GSI Init error:", err);
-      }
-    }
-
-    async function handleCredentialResponse(response) {
-      const payload = parseJwt(response.credential);
       currentUser = {
-        name: payload.name,
-        email: payload.email,
-        picture: payload.picture
+        name: name,
+        email: email,
+        picture: avatarUrl
       };
+
       localStorage.setItem('turovfy_user', JSON.stringify(currentUser));
       applyUserState(currentUser);
       closeAuthModal();
+      nameInput.value = '';
 
-      try {
-        const res = await fetch('/api/user/auth', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(currentUser)
-        });
-        const dbData = await res.json();
+      // Синхронизируем или восстанавливаем плейлисты
+      fetch('/api/user/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentUser)
+      }).then(res => res.json()).then(dbData => {
         userPlaylists = dbData.playlists || { "Любимое": [] };
         restoreSavedState(dbData.state);
-      } catch (e) {
-        console.error("Ошибка соединения с БД:", e);
-      }
+      }).catch(err => {
+        console.warn("Локальный режим пользователя:", err);
+      });
 
-      showToast(`Добро пожаловать, ${currentUser.name.split(' ')[0]}!`);
+      showToast(`Добро пожаловать, ${name}!`);
     }
 
-    function parseJwt(token) {
-      const base64Url = token.split('.')[1];
-      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-      const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
-        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
-      }).join(''));
-      return JSON.parse(jsonPayload);
-    }
-
-    async function checkExistingAuth() {
+    function checkExistingAuth() {
       const saved = localStorage.getItem('turovfy_user');
       if (saved) {
-        currentUser = JSON.parse(saved);
-        applyUserState(currentUser);
-
         try {
-          const res = await fetch('/api/user/auth', {
+          currentUser = JSON.parse(saved);
+          applyUserState(currentUser);
+
+          fetch('/api/user/auth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(currentUser)
-          });
-          const dbData = await res.json();
-          userPlaylists = dbData.playlists || { "Любимое": [] };
-          restoreSavedState(dbData.state);
-        } catch (e) {
-          console.error("Ошибка восстановления БД:", e);
-        }
+          }).then(res => res.json()).then(dbData => {
+            userPlaylists = dbData.playlists || { "Любимое": [] };
+            restoreSavedState(dbData.state);
+          }).catch(err => console.warn(err));
+        } catch (e) {}
       }
     }
 
@@ -2945,14 +2938,14 @@
       const container = document.getElementById('authContainer');
       container.innerHTML = `
         <div class="auth-btn" style="padding: 4px 12px 4px 6px;" onclick="switchTab('profile')">
-          <img src="${user.picture}" class="user-avatar">
+          <img src="${user.picture}" class="user-avatar" onerror="this.src='/assets/logo.png'">
           <span>${user.name.split(' ')[0]}</span>
         </div>
       `;
 
       document.getElementById('profileName').innerText = user.name;
       document.getElementById('profileEmail').innerText = user.email;
-      document.getElementById('profileBigAvatar').innerHTML = `<img src="${user.picture}">`;
+      document.getElementById('profileBigAvatar').innerHTML = `<img src="${user.picture}" onerror="this.src='/assets/logo.png'">`;
       const pBtn = document.getElementById('profileActionBtn');
       pBtn.innerText = 'Выйти из профиля';
       pBtn.onclick = () => {
@@ -2963,7 +2956,7 @@
 
     function openAuthModal() { 
       authModal.classList.add('active'); 
-      initGoogleAuth();
+      setTimeout(() => document.getElementById('customAuthName')?.focus(), 200);
     }
     function closeAuthModal() { authModal.classList.remove('active'); }
 
@@ -3012,7 +3005,7 @@
 
       updateDockHeartState();
 
-      // Мост передачи метаданных и обложки в системную шторку Samsung One UI / Android
+      // Шлем точные данные прямо в нативный Android Service для шторки Samsung One UI
       if (window.AndroidBridge && typeof window.AndroidBridge.updateMetadata === 'function') {
         window.AndroidBridge.updateMetadata(track.title || '', track.artist || '', track.cover || '');
       }
@@ -3172,7 +3165,6 @@
     window.onload = () => {
       executeSearch(DEFAULT_CATALOG_QUERY);
       checkExistingAuth();
-      initGoogleAuth();
       updateVolumeVisual(currentVolumeLevel);
 
       setTimeout(() => {
