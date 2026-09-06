@@ -32,7 +32,7 @@ jobs:
           mkdir -p my-app/app/src/main/res/mipmap-xxxhdpi
           mkdir -p my-app/app/src/main/res/mipmap-hdpi
 
-          # Скачиваем официальную иконку приложения
+          # Скачиваем официальную иконку
           curl -s -L "https://turovfy-app.onrender.com/assets/logo.png" -o my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           cp my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
 
@@ -43,7 +43,7 @@ jobs:
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-          # AndroidManifest.xml с аппаратным ускорением и разрешениями для аудио/сети
+          # AndroidManifest.xml с разрешениями для фонового аудио
           cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -52,6 +52,7 @@ jobs:
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
               <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
               <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
               <application
                   android:allowBackup="true"
                   android:icon="@mipmap/ic_launcher"
@@ -73,14 +74,13 @@ jobs:
           </manifest>
           EOF
 
-          # MainActivity.java: поддержка фонового аудио, WebAudio API и фикс Google OAuth
+          # MainActivity.java: чистый User-Agent для Google Auth + удержание аудиопотока
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
           package com.turovfy.app;
 
           import android.app.Activity;
-          import android.content.Intent;
-          import android.net.Uri;
           import android.os.Bundle;
+          import android.os.PowerManager;
           import android.view.KeyEvent;
           import android.webkit.CookieManager;
           import android.webkit.WebChromeClient;
@@ -90,11 +90,19 @@ jobs:
 
           public class MainActivity extends Activity {
               private WebView webView;
+              private PowerManager.WakeLock wakeLock;
 
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
                   webView = new WebView(this);
+
+                  // Держим процессор активным для непрерывного фонового стриминга
+                  PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+                  if (powerManager != null) {
+                      wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TurovFy::AudioWakeLock");
+                      wakeLock.acquire();
+                  }
 
                   WebSettings settings = webView.getSettings();
                   settings.setJavaScriptEnabled(true);
@@ -105,10 +113,9 @@ jobs:
                   settings.setAllowFileAccess(true);
                   settings.setAllowContentAccess(true);
                   settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-                  
-                  // Смена User-Agent, чтобы обойти блокировку Google OAuth и плеер отдавал WebM/MP3 потоки
-                  String defaultUA = settings.getUserAgentString();
-                  settings.setUserAgentString(defaultUA.replace("; wv", ""));
+
+                  // Маскировка под полноценный Chrome для прохождения Google OAuth без редиректов
+                  settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36");
 
                   CookieManager cookieManager = CookieManager.getInstance();
                   cookieManager.setAcceptCookie(true);
@@ -118,18 +125,26 @@ jobs:
                   webView.setWebViewClient(new WebViewClient() {
                       @Override
                       public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                          // Если вход через сторонний Google Auth — открываем через системный браузер
-                          if (url.startsWith("https://accounts.google.com") || url.contains("accounts.google.com/o/oauth2")) {
-                              Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                              startActivity(intent);
-                              return true;
-                          }
-                          return false;
+                          // Всё открываем внутри WebView, чтобы сессия Google осталась в приложении
+                          view.loadUrl(url);
+                          return true;
                       }
                   });
 
                   webView.loadUrl("https://turovfy-app.onrender.com/");
                   setContentView(webView);
+              }
+
+              @Override
+              protected void onPause() {
+                  super.onPause();
+                  // Намеренно НЕ вызываем webView.onPause(), чтобы звук не затихал при сворачивании
+              }
+
+              @Override
+              protected void onStop() {
+                  super.onStop();
+                  // Оставляем таймеры JS активными при блокировке экрана
               }
 
               @Override
@@ -139,6 +154,14 @@ jobs:
                       return true;
                   }
                   return super.onKeyDown(keyCode, event);
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (wakeLock != null && wakeLock.isHeld()) {
+                      wakeLock.release();
+                  }
+                  super.onDestroy();
               }
           }
           EOF
@@ -166,7 +189,6 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
-                  maven { url 'https://maven.google.com' }
               }
           }
           EOF
