@@ -32,10 +32,13 @@ jobs:
           mkdir -p my-app/app/src/main/res/mipmap-hdpi
           mkdir -p my-app/app/src/main/res/mipmap-xxxhdpi
 
-          # Копируем логотип в иконки приложения
+          # Гарантируем наличие иконок
           if [ -f "assets/logo.png" ]; then
             cp assets/logo.png my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
             cp assets/logo.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
+          else
+            curl -s -L "https://turovfy-app.onrender.com/assets/logo.png" -o my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png || true
+            cp my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png || true
           fi
 
           # gradle.properties
@@ -87,7 +90,7 @@ jobs:
           </manifest>
           EOF
 
-          # AudioPlayerService.java: чистый системный вызов без ошибок компиляции API 34
+          # AudioPlayerService.java: исправлены типы PlaybackState и добавлена передача обложек в MediaSession
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/AudioPlayerService.java
           package com.turovfy.app;
 
@@ -154,7 +157,7 @@ jobs:
                   mediaSession.setActive(true);
 
                   Notification notif = buildNotification();
-                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                  if (Build.VERSION.SDK_INT >= 29) {
                       startForeground(101, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
                   } else {
                       startForeground(101, notif);
@@ -163,7 +166,7 @@ jobs:
 
               public void updatePlaybackState(boolean playing) {
                   this.isPlaying = playing;
-                  long state = playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED;
+                  int state = playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED;
                   PlaybackState.Builder stateBuilder = new PlaybackState.Builder()
                       .setActions(PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE |
                                   PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS)
@@ -256,20 +259,17 @@ jobs:
           }
           EOF
 
-          # MainActivity.java: аппаратный кэш + нативный JS-интерфейс + бесшовный вход Google
+          # MainActivity.java: кэширование + нативный JS-мост + стабильный Chrome User-Agent
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
           package com.turovfy.app;
 
           import android.app.Activity;
-          import android.app.Dialog;
           import android.content.Intent;
           import android.net.Uri;
           import android.os.Build;
           import android.os.Bundle;
-          import android.os.Message;
           import android.view.KeyEvent;
           import android.view.View;
-          import android.view.ViewGroup;
           import android.webkit.CookieManager;
           import android.webkit.JavascriptInterface;
           import android.webkit.WebChromeClient;
@@ -301,18 +301,6 @@ jobs:
                           AudioPlayerService.instance.updatePlaybackState(playing);
                       }
                   }
-
-                  @JavascriptInterface
-                  public void openExternalUrl(String url) {
-                      try {
-                          Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                          intent.setPackage("com.android.chrome");
-                          startActivity(intent);
-                      } catch (Exception e) {
-                          Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                          startActivity(intent);
-                      }
-                  }
               }
 
               @Override
@@ -341,6 +329,7 @@ jobs:
                   s.setMediaPlaybackRequiresUserGesture(false);
                   s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
+                  // Быстрая загрузка из кэша
                   s.setCacheMode(WebSettings.LOAD_DEFAULT);
                   webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
@@ -348,10 +337,8 @@ jobs:
                   s.setBuiltInZoomControls(false);
                   s.setDisplayZoomControls(false);
 
-                  s.setSupportMultipleWindows(true);
-                  s.setJavaScriptCanOpenWindowsAutomatically(true);
-
-                  s.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
+                  // Мобильный Chrome UA для беспрепятственной работы Google GSI
+                  s.setUserAgentString("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
                   CookieManager cookieManager = CookieManager.getInstance();
                   cookieManager.setAcceptCookie(true);
@@ -359,51 +346,7 @@ jobs:
 
                   webView.addJavascriptInterface(new WebAppInterface(), "AndroidBridge");
 
-                  webView.setWebChromeClient(new WebChromeClient() {
-                      @Override
-                      public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
-                          WebView popWebView = new WebView(MainActivity.this);
-                          WebSettings popSettings = popWebView.getSettings();
-                          popSettings.setJavaScriptEnabled(true);
-                          popSettings.setDomStorageEnabled(true);
-                          popSettings.setUserAgentString(s.getUserAgentString());
-
-                          CookieManager.getInstance().setAcceptThirdPartyCookies(popWebView, true);
-
-                          final Dialog authDialog = new Dialog(MainActivity.this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
-                          authDialog.setContentView(popWebView, new ViewGroup.LayoutParams(
-                              ViewGroup.LayoutParams.MATCH_PARENT, 
-                              ViewGroup.LayoutParams.MATCH_PARENT
-                          ));
-                          authDialog.show();
-
-                          popWebView.setWebViewClient(new WebViewClient() {
-                              @Override
-                              public void onPageFinished(WebView v, String url) {
-                                  super.onPageFinished(v, url);
-                                  if (url.contains("turovfy-app.onrender.com")) {
-                                      authDialog.dismiss();
-                                      CookieManager.getInstance().flush();
-                                      webView.evaluateJavascript("checkExistingAuth();", null);
-                                  }
-                              }
-                          });
-
-                          popWebView.setWebChromeClient(new WebChromeClient() {
-                              @Override
-                              public void onCloseWindow(WebView window) {
-                                  authDialog.dismiss();
-                                  CookieManager.getInstance().flush();
-                                  webView.evaluateJavascript("checkExistingAuth();", null);
-                              }
-                          });
-
-                          ((WebView.WebViewTransport) resultMsg.obj).setWebView(popWebView);
-                          resultMsg.sendToTarget();
-                          return true;
-                      }
-                  });
-
+                  webView.setWebChromeClient(new WebChromeClient());
                   webView.setWebViewClient(new WebViewClient() {
                       @Override
                       public void onPageFinished(WebView view, String url) {
@@ -477,7 +420,7 @@ jobs:
               compileSdk 34
               defaultConfig {
                   applicationId "com.turovfy.app"
-                  minSdk 29
+                  minSdk 26
                   targetSdk 34
                   versionCode 1
                   versionName "1.0"
