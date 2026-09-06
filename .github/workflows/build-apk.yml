@@ -32,7 +32,7 @@ jobs:
           mkdir -p my-app/app/src/main/res/mipmap-hdpi
           mkdir -p my-app/app/src/main/res/mipmap-xxxhdpi
 
-          # Копируем логотип
+          # Копируем логотип в иконки
           if [ -f "assets/logo.png" ]; then
             cp assets/logo.png my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
             cp assets/logo.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
@@ -87,7 +87,7 @@ jobs:
           </manifest>
           EOF
 
-          # Фоновый сервис со шторкой плеера MediaSession
+          # AudioPlayerService.java: динамическая плашка с обложкой и названием в стиле One UI / Spotify
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/AudioPlayerService.java
           package com.turovfy.app;
 
@@ -97,44 +97,52 @@ jobs:
           import android.app.PendingIntent;
           import android.app.Service;
           import android.content.Intent;
+          import android.graphics.Bitmap;
+          import android.graphics.BitmapFactory;
+          import android.media.MediaMetadata;
           import android.media.session.MediaSession;
           import android.media.session.PlaybackState;
           import android.os.Build;
           import android.os.IBinder;
           import android.os.PowerManager;
+          import java.io.InputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
 
           public class AudioPlayerService extends Service {
+              public static AudioPlayerService instance;
               private PowerManager.WakeLock wakeLock;
               private MediaSession mediaSession;
+              private NotificationManager notificationManager;
+              private final String CHANNEL_ID = "turovfy_playback";
 
               @Override
               public void onCreate() {
                   super.onCreate();
+                  instance = this;
                   PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
                   if (pm != null) {
                       wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "TurovFy::BgPlay");
                       wakeLock.acquire();
                   }
 
-                  // Регистрируем системную сессию для плашки в шторке Samsung
+                  notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && notificationManager != null) {
+                      NotificationChannel chan = new NotificationChannel(
+                          CHANNEL_ID, "TurovFy Playback", NotificationManager.IMPORTANCE_LOW);
+                      notificationManager.createNotificationChannel(chan);
+                  }
+
                   mediaSession = new MediaSession(this, "TurovFySession");
                   mediaSession.setCallback(new MediaSession.Callback() {
                       @Override
-                      public void onPlay() {
-                          MainActivity.triggerJs("togglePlay()");
-                      }
+                      public void onPlay() { MainActivity.triggerJs("togglePlay()"); }
                       @Override
-                      public void onPause() {
-                          MainActivity.triggerJs("togglePlay()");
-                      }
+                      public void onPause() { MainActivity.triggerJs("togglePlay()"); }
                       @Override
-                      public void onSkipToNext() {
-                          MainActivity.triggerJs("nextTrack()");
-                      }
+                      public void onSkipToNext() { MainActivity.triggerJs("nextTrack()"); }
                       @Override
-                      public void onSkipToPrevious() {
-                          MainActivity.triggerJs("prevTrack()");
-                      }
+                      public void onSkipToPrevious() { MainActivity.triggerJs("prevTrack()"); }
                   });
 
                   PlaybackState.Builder stateBuilder = new PlaybackState.Builder()
@@ -144,36 +152,66 @@ jobs:
                   mediaSession.setPlaybackState(stateBuilder.build());
                   mediaSession.setActive(true);
 
-                  String channelId = "turovfy_playback";
-                  Notification.Builder builder;
+                  startForeground(101, buildNotification("TurovFy", "Ожидание выбора", null));
+              }
 
+              public void updateTrackInfo(final String title, final String artist, final String coverUrl) {
+                  new Thread(() -> {
+                      Bitmap bitmap = null;
+                      if (coverUrl != null && !coverUrl.isEmpty()) {
+                          try {
+                              URL url = new URL(coverUrl);
+                              HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                              connection.setDoInput(true);
+                              connection.connect();
+                              InputStream input = connection.getInputStream();
+                              bitmap = BitmapFactory.decodeStream(input);
+                          } catch (Exception ignored) {}
+                      }
+
+                      MediaMetadata.Builder metaBuilder = new MediaMetadata.Builder()
+                          .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                          .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
+                          .putString(MediaMetadata.METADATA_KEY_ALBUM, "TurovFy");
+
+                      if (bitmap != null) {
+                          metaBuilder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, bitmap);
+                      }
+                      mediaSession.setMetadata(metaBuilder.build());
+
+                      Notification notif = buildNotification(title, artist, bitmap);
+                      if (notificationManager != null) {
+                          notificationManager.notify(101, notif);
+                      }
+                  }).start();
+              }
+
+              private Notification buildNotification(String title, String artist, Bitmap cover) {
+                  Intent openIntent = new Intent(this, MainActivity.class);
+                  PendingIntent pi = PendingIntent.getActivity(this, 0, openIntent,
+                      PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+
+                  Notification.Builder builder;
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                      NotificationChannel chan = new NotificationChannel(
-                          channelId, "TurovFy Playback", NotificationManager.IMPORTANCE_LOW);
-                      NotificationManager manager = getSystemService(NotificationManager.class);
-                      if (manager != null) manager.createNotificationChannel(chan);
-                      builder = new Notification.Builder(this, channelId);
+                      builder = new Notification.Builder(this, CHANNEL_ID);
                   } else {
                       builder = new Notification.Builder(this);
                   }
 
-                  Intent openIntent = new Intent(this, MainActivity.class);
-                  PendingIntent pi = PendingIntent.getActivity(this, 0, openIntent, 
-                      PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-
                   Notification.MediaStyle style = new Notification.MediaStyle();
                   style.setMediaSession(mediaSession.getSessionToken());
 
-                  Notification notification = builder
-                      .setContentTitle("TurovFy")
-                      .setContentText("Музыка играет")
-                      .setSmallIcon(R.mipmap.ic_launcher)
-                      .setContentIntent(pi)
-                      .setStyle(style)
-                      .setVisibility(Notification.VISIBILITY_PUBLIC)
-                      .build();
+                  builder.setContentTitle(title)
+                         .setContentText(artist)
+                         .setSmallIcon(R.mipmap.ic_launcher)
+                         .setContentIntent(pi)
+                         .setStyle(style)
+                         .setVisibility(Notification.VISIBILITY_PUBLIC);
 
-                  startForeground(101, notification);
+                  if (cover != null) {
+                      builder.setLargeIcon(cover);
+                  }
+                  return builder.build();
               }
 
               @Override
@@ -183,9 +221,7 @@ jobs:
 
               @Override
               public void onDestroy() {
-                  if (wakeLock != null && wakeLock.isHeld()) {
-                      wakeLock.release();
-                  }
+                  if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
                   if (mediaSession != null) {
                       mediaSession.setActive(false);
                       mediaSession.release();
@@ -194,13 +230,11 @@ jobs:
               }
 
               @Override
-              public IBinder onBind(Intent intent) {
-                  return null;
-              }
+              public IBinder onBind(Intent intent) { return null; }
           }
           EOF
 
-          # MainActivity.java: поддержка попапов входа Google внутри приложения
+          # MainActivity.java: Нативный JS-мост + ускоренный кэш + поддержка мобильного Google Auth
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
           package com.turovfy.app;
 
@@ -214,6 +248,7 @@ jobs:
           import android.view.View;
           import android.view.ViewGroup;
           import android.webkit.CookieManager;
+          import android.webkit.JavascriptInterface;
           import android.webkit.WebChromeClient;
           import android.webkit.WebSettings;
           import android.webkit.WebView;
@@ -229,10 +264,19 @@ jobs:
                   }
               }
 
+              public class WebAppInterface {
+                  @JavascriptInterface
+                  public void updateMetadata(String title, String artist, String coverUrl) {
+                      if (AudioPlayerService.instance != null) {
+                          AudioPlayerService.instance.updateTrackInfo(title, artist, coverUrl);
+                      }
+                  }
+              }
+
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
-                  
+
                   webView = new WebView(this) {
                       @Override
                       protected void onWindowVisibilityChanged(int visibility) {
@@ -254,24 +298,30 @@ jobs:
                   s.setDatabaseEnabled(true);
                   s.setMediaPlaybackRequiresUserGesture(false);
                   s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+
+                  // Максимальное ускорение рендеринга и кэширования
                   s.setCacheMode(WebSettings.LOAD_DEFAULT);
-                  
+                  s.setRenderPriority(WebSettings.RenderPriority.HIGH);
+                  webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
                   s.setSupportZoom(false);
                   s.setBuiltInZoomControls(false);
                   s.setDisplayZoomControls(false);
 
-                  // Включаем поддержку окон (попапов) для Google Auth
+                  // Поддержка попапов и оверлеев
                   s.setSupportMultipleWindows(true);
                   s.setJavaScriptCanOpenWindowsAutomatically(true);
 
-                  // Десктопный UA, чтобы Google не блочил авторизацию
-                  s.setUserAgentString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
+                  // ЧИСТЫЙ МОБИЛЬНЫЙ CHROME ЮЗЕРАГЕНТ (без десктопа и без "; wv")
+                  s.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36");
 
                   CookieManager cookieManager = CookieManager.getInstance();
                   cookieManager.setAcceptCookie(true);
                   cookieManager.setAcceptThirdPartyCookies(webView, true);
 
-                  // Обработка всплывающего окна Google Login прямо внутри приложения
+                  // Регистрируем JS-мост для передачи названия и обложки в шторку
+                  webView.addJavascriptInterface(new WebAppInterface(), "AndroidBridge");
+
                   webView.setWebChromeClient(new WebChromeClient() {
                       @Override
                       public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
@@ -294,7 +344,6 @@ jobs:
                               @Override
                               public void onPageFinished(WebView v, String url) {
                                   super.onPageFinished(v, url);
-                                  // Если вернулись на Render — закрываем модалку и обновляем сессию
                                   if (url.contains("turovfy-app.onrender.com")) {
                                       authDialog.dismiss();
                                       CookieManager.getInstance().flush();
@@ -336,9 +385,7 @@ jobs:
               }
 
               @Override
-              protected void onPause() {
-                  super.onPause();
-              }
+              protected void onPause() { super.onPause(); }
 
               @Override
               public boolean onKeyDown(int keyCode, KeyEvent event) {
