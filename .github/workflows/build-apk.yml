@@ -25,24 +25,17 @@ jobs:
         with:
           gradle-version: '8.4'
 
-      - name: Prepare Standalone Android App
+      - name: Prepare Android App
         run: |
           mkdir -p my-app/app/src/main/java/com/turovfy/app
-          mkdir -p my-app/app/src/main/assets
           mkdir -p my-app/app/src/main/res/values
           mkdir -p my-app/app/src/main/res/mipmap-hdpi
           mkdir -p my-app/app/src/main/res/mipmap-xxxhdpi
 
-          # Копируем локальный интерфейс в сборку APK
-          if [ -f "index.html" ]; then
-            cp index.html my-app/app/src/main/assets/
-          fi
-          if [ -d "assets" ]; then
-            cp -r assets/* my-app/app/src/main/assets/
-            if [ -f "assets/logo.png" ]; then
-              cp assets/logo.png my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-              cp assets/logo.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
-            fi
+          # Копируем логотип в иконки
+          if [ -f "assets/logo.png" ]; then
+            cp assets/logo.png my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+            cp assets/logo.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
           fi
 
           # gradle.properties
@@ -94,7 +87,7 @@ jobs:
           </manifest>
           EOF
 
-          # Фоновый сервис на системных вызовах без AndroidX
+          # Фоновый сервис для удержания процессора
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/AudioPlayerService.java
           package com.turovfy.app;
 
@@ -119,7 +112,7 @@ jobs:
                       wakeLock.acquire();
                   }
 
-                  String channelId = "turovfy_channel";
+                  String channelId = "turovfy_playback";
                   Notification.Builder builder;
 
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -134,7 +127,7 @@ jobs:
 
                   Notification notification = builder
                       .setContentTitle("TurovFy")
-                      .setContentText("Музыка играет в фоне")
+                      .setContentText("Фоновое воспроизведение активно")
                       .setSmallIcon(R.mipmap.ic_launcher)
                       .build();
 
@@ -161,7 +154,7 @@ jobs:
           }
           EOF
 
-          # MainActivity.java на чистом Android SDK
+          # MainActivity.java: реальный домен + внедрение скрипта для обхода паузы YouTube при выключении экрана
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
           package com.turovfy.app;
 
@@ -171,6 +164,7 @@ jobs:
           import android.os.Build;
           import android.os.Bundle;
           import android.view.KeyEvent;
+          import android.view.View;
           import android.webkit.CookieManager;
           import android.webkit.WebChromeClient;
           import android.webkit.WebSettings;
@@ -183,7 +177,14 @@ jobs:
               @Override
               protected void onCreate(Bundle savedInstanceState) {
                   super.onCreate(savedInstanceState);
-                  webView = new WebView(this);
+                  
+                  webView = new WebView(this) {
+                      @Override
+                      protected void onWindowVisibilityChanged(int visibility) {
+                          // Заставляем WebView всегда думать, что окно активно и видно
+                          super.onWindowVisibilityChanged(View.VISIBLE);
+                      }
+                  };
 
                   Intent serviceIntent = new Intent(this, AudioPlayerService.class);
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -198,10 +199,7 @@ jobs:
                   s.setDatabaseEnabled(true);
                   s.setMediaPlaybackRequiresUserGesture(false);
                   s.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-                  s.setAllowFileAccess(true);
-                  s.setAllowContentAccess(true);
-                  s.setAllowFileAccessFromFileURLs(true);
-                  s.setAllowUniversalAccessFromFileURLs(true);
+                  s.setCacheMode(WebSettings.LOAD_DEFAULT);
                   
                   s.setSupportZoom(false);
                   s.setBuiltInZoomControls(false);
@@ -215,6 +213,18 @@ jobs:
 
                   webView.setWebChromeClient(new WebChromeClient());
                   webView.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public void onPageFinished(WebView view, String url) {
+                          super.onPageFinished(view, url);
+                          // Инжектим защиту от паузы YouTube IFrame при блокировке экрана
+                          view.evaluateJavascript(
+                              "Object.defineProperty(document, 'hidden', { get: () => false, configurable: true });" +
+                              "Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true });" +
+                              "window.addEventListener('visibilitychange', (e) => e.stopImmediatePropagation(), true);",
+                              null
+                          );
+                      }
+
                       @Override
                       public boolean shouldOverrideUrlLoading(WebView view, String url) {
                           if (url.contains("accounts.google.com")) {
@@ -237,7 +247,7 @@ jobs:
                       }
                   });
 
-                  webView.loadUrl("file:///android_asset/index.html");
+                  webView.loadUrl("https://turovfy-app.onrender.com/");
                   setContentView(webView);
               }
 
@@ -263,7 +273,6 @@ jobs:
           </resources>
           EOF
 
-          # build.gradle (project)
           cat << 'EOF' > my-app/build.gradle
           buildscript {
               repositories {
@@ -286,7 +295,6 @@ jobs:
 
           echo "include ':app'" > my-app/settings.gradle
 
-          # build.gradle (app) без внешних зависимостей
           cat << 'EOF' > my-app/app/build.gradle
           apply plugin: 'com.android.application'
           android {
