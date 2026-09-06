@@ -47,7 +47,7 @@ jobs:
 
           # gradle.properties
           cat << 'EOF' > my-app/gradle.properties
-          android.useAndroidX=true
+          android.useAndroidX=false
           android.enableJetifier=false
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
@@ -72,7 +72,7 @@ jobs:
                   android:label="@string/app_name"
                   android:hardwareAccelerated="true"
                   android:usesCleartextTraffic="true"
-                  android:theme="@style/Theme.AppCompat.NoActionBar">
+                  android:theme="@android:style/Theme.NoTitleBar">
 
                   <service
                       android:name=".AudioPlayerService"
@@ -94,7 +94,7 @@ jobs:
           </manifest>
           EOF
 
-          # Фоновый сервис без внешних библиотек
+          # Фоновый сервис на системных вызовах без AndroidX
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/AudioPlayerService.java
           package com.turovfy.app;
 
@@ -161,7 +161,7 @@ jobs:
           }
           EOF
 
-          # MainActivity.java: открытие Chrome через нативный Intent без CustomTabsIntent
+          # MainActivity.java на чистом Android SDK
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
           package com.turovfy.app;
 
@@ -286,7 +286,7 @@ jobs:
 
           echo "include ':app'" > my-app/settings.gradle
 
-          # build.gradle (app) только с чистым AppCompat
+          # build.gradle (app) без внешних зависимостей
           cat << 'EOF' > my-app/app/build.gradle
           apply plugin: 'com.android.application'
           android {
@@ -304,9 +304,7 @@ jobs:
                   targetCompatibility JavaVersion.VERSION_17
               }
           }
-          dependencies {
-              implementation 'androidx.appcompat:appcompat:1.6.1'
-          }
+          dependencies {}
           EOF
 
       - name: Build APK with Gradle
