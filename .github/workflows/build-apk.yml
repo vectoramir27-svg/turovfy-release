@@ -33,19 +33,15 @@ jobs:
           mkdir -p my-app/app/src/main/res/mipmap-hdpi
           mkdir -p my-app/app/src/main/res/mipmap-xxxhdpi
 
-          # Копируем фронтенд внутрь APK
+          # Копируем фронтенд в ассеты
           if [ -f "index.html" ]; then
             cp index.html my-app/app/src/main/assets/
           fi
           if [ -d "assets" ]; then
             cp -r assets/* my-app/app/src/main/assets/
-            # Забираем иконку из папки assets
             if [ -f "assets/logo.png" ]; then
               cp assets/logo.png my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
               cp assets/logo.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
-            elif [ -f "assets/icon.png" ]; then
-              cp assets/icon.png my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
-              cp assets/icon.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
             fi
           fi
 
@@ -98,7 +94,7 @@ jobs:
           </manifest>
           EOF
 
-          # Сервис для непрерывного воспроизведения в фоне и при блокировке
+          # Фоновый сервис для удержания процессора
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/AudioPlayerService.java
           package com.turovfy.app;
 
@@ -134,7 +130,7 @@ jobs:
 
                   Notification notification = new NotificationCompat.Builder(this, channelId)
                       .setContentTitle("TurovFy")
-                      .setContentText("Фоновое воспроизведение активно")
+                      .setContentText("Музыка играет в фоне")
                       .setSmallIcon(R.mipmap.ic_launcher)
                       .setPriority(NotificationCompat.PRIORITY_LOW)
                       .build();
@@ -162,13 +158,12 @@ jobs:
           }
           EOF
 
-          # MainActivity.java: запуск локальных ассетов + разблокировка аудио и Google Login
+          # MainActivity.java: настройка WebView для YouTube iframe в фоне
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
           package com.turovfy.app;
 
           import android.app.Activity;
           import android.content.Intent;
-          import android.net.Uri;
           import android.os.Build;
           import android.os.Bundle;
           import android.view.KeyEvent;
@@ -177,7 +172,6 @@ jobs:
           import android.webkit.WebSettings;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
-          import androidx.browser.customtabs.CustomTabsIntent;
 
           public class MainActivity extends Activity {
               private WebView webView;
@@ -187,7 +181,6 @@ jobs:
                   super.onCreate(savedInstanceState);
                   webView = new WebView(this);
 
-                  // Запускаем фоновую службу
                   Intent serviceIntent = new Intent(this, AudioPlayerService.class);
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       startForegroundService(serviceIntent);
@@ -210,7 +203,7 @@ jobs:
                   s.setBuiltInZoomControls(false);
                   s.setDisplayZoomControls(false);
 
-                  // Десктопный UA для обхода ограничений авторизации
+                  // Десктопный Chrome User-Agent, чтобы YouTube не резал фоновое аудио
                   s.setUserAgentString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
 
                   CookieManager cookieManager = CookieManager.getInstance();
@@ -218,26 +211,8 @@ jobs:
                   cookieManager.setAcceptThirdPartyCookies(webView, true);
 
                   webView.setWebChromeClient(new WebChromeClient());
-                  webView.setWebViewClient(new WebViewClient() {
-                      @Override
-                      public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                          if (url.contains("accounts.google.com")) {
-                              try {
-                                  CustomTabsIntent customTabsIntent = new CustomTabsIntent.Builder().build();
-                                  customTabsIntent.intent.setPackage("com.android.chrome");
-                                  customTabsIntent.launchUrl(MainActivity.this, Uri.parse(url));
-                                  return true;
-                              } catch (Exception e) {
-                                  Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                                  startActivity(intent);
-                                  return true;
-                              }
-                          }
-                          return false;
-                      }
-                  });
+                  webView.setWebViewClient(new WebViewClient());
 
-                  // Загружаем локальный интерфейс из APK
                   webView.loadUrl("file:///android_asset/index.html");
                   setContentView(webView);
               }
@@ -245,7 +220,7 @@ jobs:
               @Override
               protected void onPause() {
                   super.onPause();
-                  // Не глушим WebView при сворачивании
+                  // КРИТИЧЕСКИ ВАЖНО: не вызываем webView.onPause(), иначе YouTube глушит плеер!
               }
 
               @Override
@@ -281,6 +256,7 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
+                  maven { url 'https://maven.google.com' }
               }
           }
           EOF
@@ -307,7 +283,6 @@ jobs:
           }
           dependencies {
               implementation 'androidx.appcompat:appcompat:1.6.1'
-              implementation 'androidx.browser:browser:1.8.0'
               implementation 'androidx.core:core:1.12.0'
           }
           EOF
