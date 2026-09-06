@@ -36,14 +36,14 @@ jobs:
           curl -s -L "https://turovfy-app.onrender.com/assets/logo.png" -o my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
           cp my-app/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png my-app/app/src/main/res/mipmap-hdpi/ic_launcher.png
 
-          # gradle.properties
+          # gradle.properties (отключаем Jetifier, чтобы убрать конфликт классов Kotlin)
           cat << 'EOF' > my-app/gradle.properties
           android.useAndroidX=true
-          android.enableJetifier=true
+          android.enableJetifier=false
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           EOF
 
-          # AndroidManifest.xml с разрешениями для фонового аудио и сервиса
+          # AndroidManifest.xml с разрешениями для фонового аудио и службы
           cat << 'EOF' > my-app/app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
@@ -80,18 +80,12 @@ jobs:
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
-                      <intent-filter>
-                          <action android:name="android.intent.action.VIEW" />
-                          <category android:name="android.intent.category.DEFAULT" />
-                          <category android:name="android.intent.category.BROWSABLE" />
-                          <data android:scheme="turovfy" />
-                      </intent-filter>
                   </activity>
               </application>
           </manifest>
           EOF
 
-          # Фоновый сервис для удержания процессора и звука при блокировке экрана
+          # Сервис для непрерывного фонового воспроизведения при блокировке экрана
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/AudioPlayerService.java
           package com.turovfy.app;
 
@@ -155,7 +149,7 @@ jobs:
           }
           EOF
 
-          # MainActivity.java: запуск сервиса + открытие Google Auth через Chrome
+          # MainActivity.java с запуском службы и перенаправлением Google Login в Chrome
           cat << 'EOF' > my-app/app/src/main/java/com/turovfy/app/MainActivity.java
           package com.turovfy.app;
 
@@ -180,7 +174,6 @@ jobs:
                   super.onCreate(savedInstanceState);
                   webView = new WebView(this);
 
-                  // Запускаем службу для непрерывного фонового стриминга
                   Intent serviceIntent = new Intent(this, AudioPlayerService.class);
                   if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                       startForegroundService(serviceIntent);
@@ -202,7 +195,6 @@ jobs:
                   s.setBuiltInZoomControls(false);
                   s.setDisplayZoomControls(false);
 
-                  // Актуальный десктопный Chrome User-Agent
                   s.setUserAgentString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
 
                   CookieManager cookieManager = CookieManager.getInstance();
@@ -213,7 +205,6 @@ jobs:
                   webView.setWebViewClient(new WebViewClient() {
                       @Override
                       public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                          // Если идет авторизация Google — принудительно открываем через Google Chrome
                           if (url.contains("accounts.google.com")) {
                               try {
                                   CustomTabsIntent customTabsIntent = new CustomTabsIntent.Builder().build();
@@ -227,7 +218,6 @@ jobs:
                                       startActivity(intent);
                                       return true;
                                   } catch (Exception ex) {
-                                      // Если Chrome не найден, открываем стандартным браузером
                                       return false;
                                   }
                               }
@@ -249,7 +239,6 @@ jobs:
               @Override
               protected void onPause() {
                   super.onPause();
-                  // Намеренно не глушим WebView в фоне
               }
 
               @Override
@@ -285,13 +274,14 @@ jobs:
               repositories {
                   google()
                   mavenCentral()
+                  maven { url 'https://maven.google.com' }
               }
           }
           EOF
 
           echo "include ':app'" > my-app/settings.gradle
 
-          # build.gradle (app) с библиотеками поддержки кастом-табов и фона
+          # build.gradle (app) с исключением дубликатов kotlin-stdlib
           cat << 'EOF' > my-app/app/build.gradle
           apply plugin: 'com.android.application'
           android {
@@ -308,6 +298,10 @@ jobs:
                   sourceCompatibility JavaVersion.VERSION_17
                   targetCompatibility JavaVersion.VERSION_17
               }
+          }
+          configurations.all {
+              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
           }
           dependencies {
               implementation 'androidx.appcompat:appcompat:1.6.1'
